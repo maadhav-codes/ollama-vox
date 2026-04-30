@@ -1,6 +1,7 @@
 from queue import Queue
 from threading import Thread
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class Pipeline:
         drop_policy="drop_oldest",
         status_callback=None,
         response_style="neutral",
+        metrics_callback=None,
     ):
         self.audio_q = Queue(maxsize=queue_maxsize)
         self.text_q = Queue(maxsize=queue_maxsize)
@@ -27,9 +29,20 @@ class Pipeline:
         self.sr = sample_rate
         self.drop_policy = drop_policy
         self.status_callback = status_callback
+        self.metrics_callback = metrics_callback
         self.response_style = response_style
 
         self.running = True
+        self.metrics = {
+            "stt_ms_last": None,
+            "llm_ms_last": None,
+            "tts_ms_last": None,
+            "stt_ms_avg": None,
+            "llm_ms_avg": None,
+            "tts_ms_avg": None,
+            "responses_count": 0,
+            "last_response": "",
+        }
 
     def set_status_callback(self, callback):
         self.status_callback = callback
@@ -40,6 +53,24 @@ class Pipeline:
                 self.status_callback(status)
             except Exception:
                 logger.exception("event=status_callback_failed status=%s", status)
+
+    def _set_metrics_callback(self, callback):
+        self.metrics_callback = callback
+
+    def _update_metric(self, key_last, key_avg, elapsed_ms):
+        self.metrics[key_last] = round(elapsed_ms, 1)
+        prev = self.metrics.get(key_avg)
+        if prev is None:
+            self.metrics[key_avg] = round(elapsed_ms, 1)
+        else:
+            self.metrics[key_avg] = round((prev * 0.8) + (elapsed_ms * 0.2), 1)
+
+    def _publish_metrics(self):
+        if self.metrics_callback:
+            try:
+                self.metrics_callback(dict(self.metrics))
+            except Exception:
+                logger.exception("event=metrics_callback_failed")
 
     def _safe_put(self, q, item, name):
         if not q.full():
@@ -78,9 +109,16 @@ class Pipeline:
             try:
                 audio = self.audio_q.get()
                 self._set_status("busy")
+                start = time.perf_counter()
                 text = self.stt.transcribe(audio, self.sr)
+                self._update_metric(
+                    "stt_ms_last",
+                    "stt_ms_avg",
+                    (time.perf_counter() - start) * 1000.0,
+                )
                 if text:
                     self._safe_put(self.text_q, text, "text")
+                self._publish_metrics()
                 self._set_status("idle")
             except Exception as exc:
                 self._set_status("error")
@@ -95,9 +133,21 @@ class Pipeline:
             try:
                 text = self.text_q.get()
                 self._set_status("busy")
+                start = time.perf_counter()
                 token_stream = self.llm.stream_generate(text)
+                response_parts = []
                 for sentence in self.llm.sentence_chunks(token_stream):
+                    response_parts.append(sentence)
                     self._safe_put(self.response_q, sentence, "response")
+                self._update_metric(
+                    "llm_ms_last",
+                    "llm_ms_avg",
+                    (time.perf_counter() - start) * 1000.0,
+                )
+                if response_parts:
+                    self.metrics["last_response"] = " ".join(response_parts).strip()
+                    self.metrics["responses_count"] += 1
+                self._publish_metrics()
                 self._set_status("idle")
             except Exception as exc:
                 self._set_status("error")
@@ -108,7 +158,14 @@ class Pipeline:
             try:
                 response = self.response_q.get()
                 self._set_status("speaking")
+                start = time.perf_counter()
                 self.tts.speak(response, style=self.response_style)
+                self._update_metric(
+                    "tts_ms_last",
+                    "tts_ms_avg",
+                    (time.perf_counter() - start) * 1000.0,
+                )
+                self._publish_metrics()
                 self._set_status("idle")
             except Exception as exc:
                 self._set_status("error")

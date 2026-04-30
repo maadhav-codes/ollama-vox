@@ -63,13 +63,20 @@ def run_setup(config):
     tts_path = config.get("tts", {}).get("model", "./kokoro/Kokoro-82M-4bit")
     voice = config.get("tts", {}).get("voice", "af_bella")
 
-    logger.info("event=setup_started stt_path=%s tts_path=%s voice=%s", stt_path, tts_path, voice)
+    logger.info(
+        "event=setup_started stt_path=%s tts_path=%s voice=%s",
+        stt_path,
+        tts_path,
+        voice,
+    )
 
     if os.path.exists(stt_path):
         logger.info("event=setup_skip_stt reason=exists path=%s", stt_path)
     else:
         _ensure_parent(stt_path)
-        logger.info("event=setup_download_stt repo=mlx-community/whisper-small.en-mlx-q4")
+        logger.info(
+            "event=setup_download_stt repo=mlx-community/whisper-small.en-mlx-q4"
+        )
         snapshot_download(
             repo_id="mlx-community/whisper-small.en-mlx-q4",
             local_dir=stt_path,
@@ -154,6 +161,7 @@ def main():
     hotkey = config.get("hotkey", {}).get("key", "cmd+shift")
     app = VoiceApp(pipeline, recorder, hotkey=hotkey)
     pipeline.set_status_callback(app.set_status)
+    pipeline._set_metrics_callback(app.set_metrics)
     app.run()
 
 

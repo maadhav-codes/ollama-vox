@@ -8,11 +8,19 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
-    def __init__(self, model, temperature, retries=2, backoff_seconds=0.5):
+    def __init__(
+        self,
+        model,
+        temperature,
+        retries=2,
+        backoff_seconds=0.5,
+        fallback_message="Sorry, my brain glitched for a moment. Please try again.",
+    ):
         self.model = model
         self.temperature = temperature
         self.retries = retries
         self.backoff_seconds = backoff_seconds
+        self.fallback_message = fallback_message
 
     def generate(self, prompt):
         payload = {
@@ -54,7 +62,7 @@ class OllamaClient:
             self.retries,
             last_error,
         )
-        return f"[LLM unavailable: {last_error}]"
+        return self.fallback_message
 
     def stream_generate(self, prompt: str) -> Iterable[str]:
         payload = {
@@ -64,6 +72,7 @@ class OllamaClient:
             "stream": True,
         }
         last_error = None
+        emitted_any = False
 
         for attempt in range(self.retries + 1):
             try:
@@ -80,6 +89,7 @@ class OllamaClient:
                         data = requests.models.complexjson.loads(line)
                         token = data.get("response", "")
                         if token:
+                            emitted_any = True
                             yield token
                     return
             except Exception as exc:
@@ -91,6 +101,8 @@ class OllamaClient:
                     self.model,
                     exc,
                 )
+                if emitted_any:
+                    break
                 if attempt < self.retries:
                     time.sleep(self.backoff_seconds * (2**attempt))
 
@@ -100,7 +112,10 @@ class OllamaClient:
             self.retries,
             last_error,
         )
-        yield f"[LLM unavailable: {last_error}]"
+        if emitted_any:
+            yield f" {self.fallback_message}"
+        else:
+            yield self.fallback_message
 
     @staticmethod
     def sentence_chunks(token_stream: Iterable[str]) -> Iterable[str]:

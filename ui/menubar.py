@@ -11,12 +11,14 @@ class VoiceApp(rumps.App):
         self.hotkey = hotkey or "cmd+shift"
         self._hotkey_listener = None
         self.status = "idle"
+        self.metrics = {}
 
         self.menu = [
             "Start Listening",
             "Stop Listening",
             f"Hotkey: {self.hotkey}",
             "Status: idle",
+            "Show Status",
             None,
             "Quit",
         ]
@@ -96,6 +98,38 @@ class VoiceApp(rumps.App):
         if self._status_item is not None:
             self._status_item.title = f"Status: {status}"
 
+    def set_metrics(self, metrics):
+        self.metrics = metrics or {}
+
+    def _fmt_ms(self, value):
+        if value is None:
+            return "n/a"
+        return f"{value:.1f} ms"
+
+    def _status_body(self):
+        llm_model = getattr(self.pipeline.llm, "model", "unknown")
+        stt_model = getattr(self.pipeline.stt, "model_path", None) or "configured"
+        tts_model = getattr(self.pipeline.tts, "model_id", "configured")
+        last_response = (self.metrics.get("last_response") or "No responses yet.").strip()
+        if len(last_response) > 220:
+            last_response = last_response[:217] + "..."
+
+        lines = [
+            f"Status: {self.status}",
+            f"LLM: {llm_model}",
+            f"STT: {stt_model}",
+            f"TTS: {tts_model}",
+            "",
+            "Latency",
+            f"STT last/avg: {self._fmt_ms(self.metrics.get('stt_ms_last'))} / {self._fmt_ms(self.metrics.get('stt_ms_avg'))}",
+            f"LLM last/avg: {self._fmt_ms(self.metrics.get('llm_ms_last'))} / {self._fmt_ms(self.metrics.get('llm_ms_avg'))}",
+            f"TTS last/avg: {self._fmt_ms(self.metrics.get('tts_ms_last'))} / {self._fmt_ms(self.metrics.get('tts_ms_avg'))}",
+            f"Responses: {self.metrics.get('responses_count', 0)}",
+            "",
+            f"Last response: {last_response}",
+        ]
+        return "\n".join(lines)
+
     @rumps.clicked("Start Listening")
     def start(self, _):
         if not self.recording:
@@ -117,6 +151,14 @@ class VoiceApp(rumps.App):
                 return
 
             self.set_status("idle")
+
+    @rumps.clicked("Show Status")
+    def show_status(self, _):
+        rumps.alert(
+            title="Voice Assistant Status",
+            message=self._status_body(),
+            ok="Close",
+        )
 
     @rumps.clicked("Quit")
     def quit(self, _):
