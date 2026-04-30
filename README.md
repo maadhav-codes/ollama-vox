@@ -44,6 +44,17 @@ or:
 python main.py
 ```
 
+First-time setup (downloads recommended local STT + TTS assets):
+
+```bash
+uv run native-ollama-voiceover --setup
+```
+
+This command downloads:
+
+- `mlx-community/whisper-small.en-mlx-q4` into `stt.model`
+- `mlx-community/Kokoro-82M-4bit` into `tts.model` (including your configured voice file)
+
 ## Configuration
 
 Main config is in `config.yaml`.

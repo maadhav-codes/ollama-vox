@@ -5,6 +5,7 @@ description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollam
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "huggingface-hub>=1.12.2",
     "misaki[en]>=0.9.4",
     "mlx-audio>=0.4.3",
     "mlx-whisper>=0.4.3",
@@ -19,6 +20,20 @@ dependencies = [
 
 [project.scripts]
 native-ollama-voiceover = "main:main"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["setuptools>=81.0.0", "wheel>=0.47.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "ui*"]
+exclude = ["kokoro*", "whisper*", "lib*"]
 
 [dependency-groups]
 dev = [

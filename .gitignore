@@ -4,3 +4,4 @@
 __pycache__
 whisper
 kokoro
+*.egg-info

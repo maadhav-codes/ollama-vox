@@ -1,7 +1,9 @@
+import argparse
 import yaml
 import logging
 import os
 import requests
+from huggingface_hub import snapshot_download
 
 from core.audio import AudioRecorder
 from core.stt import STT
@@ -50,9 +52,71 @@ def run_startup_health_checks(config):
         logging.getLogger(__name__).info("event=startup_health_ok")
 
 
+def _ensure_parent(path):
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+
+
+def run_setup(config):
+    logger = logging.getLogger(__name__)
+    stt_path = config.get("stt", {}).get("model", "./whisper/whisper-small.en-mlx-q4")
+    tts_path = config.get("tts", {}).get("model", "./kokoro/Kokoro-82M-4bit")
+    voice = config.get("tts", {}).get("voice", "af_bella")
+
+    logger.info("event=setup_started stt_path=%s tts_path=%s voice=%s", stt_path, tts_path, voice)
+
+    if os.path.exists(stt_path):
+        logger.info("event=setup_skip_stt reason=exists path=%s", stt_path)
+    else:
+        _ensure_parent(stt_path)
+        logger.info("event=setup_download_stt repo=mlx-community/whisper-small.en-mlx-q4")
+        snapshot_download(
+            repo_id="mlx-community/whisper-small.en-mlx-q4",
+            local_dir=stt_path,
+            local_dir_use_symlinks=False,
+        )
+        logger.info("event=setup_done_stt path=%s", stt_path)
+
+    if os.path.exists(tts_path):
+        logger.info("event=setup_skip_tts reason=exists path=%s", tts_path)
+    else:
+        _ensure_parent(tts_path)
+        logger.info("event=setup_download_tts repo=mlx-community/Kokoro-82M-4bit")
+        allow_patterns = [
+            "*.json",
+            "*.md",
+            "*.safetensors",
+            "*.pth",
+            f"voices/{voice}.safetensors",
+            f"voices/{voice}.pt",
+        ]
+        snapshot_download(
+            repo_id="mlx-community/Kokoro-82M-4bit",
+            local_dir=tts_path,
+            local_dir_use_symlinks=False,
+            allow_patterns=allow_patterns,
+        )
+        logger.info("event=setup_done_tts path=%s", tts_path)
+
+    logger.info("event=setup_finished")
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Native Ollama Voiceover")
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Download recommended Whisper + Kokoro model assets, then exit.",
+    )
+    args = parser.parse_args()
+
     configure_logging()
     config = load_config()
+
+    if args.setup:
+        run_setup(config)
+        return
+
     run_startup_health_checks(config)
 
     audio_cfg = config.get("audio", {})
