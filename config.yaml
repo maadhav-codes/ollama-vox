@@ -1,0 +1,39 @@
+audio:
+  sample_rate: 16000
+  vad_enabled: true
+  vad_threshold: 0.015
+  vad_silence_seconds: 1.2
+  max_duration_seconds: 20
+
+stt:
+  model: ./whisper/whisper-small.en-mlx-q4
+
+ollama:
+  model: llama3.2:1b-instruct-q4_K_M
+  temperature: 0.7
+
+tts:
+  model: ./kokoro/Kokoro-82M-4bit
+  voice: af_bella
+  rate: 1.0
+  sample_rate: 24000
+  split_chars: 180
+
+hotkey:
+  key: cmd+shift
+
+queue:
+  maxsize: 4
+  drop_policy: drop_oldest
+
+response_style: neutral
+
+styles:
+  neutral:
+    speed: 1.0
+  calm:
+    speed: 0.92
+    pitch: -0.2
+  excited:
+    speed: 1.12
+    pitch: 0.4

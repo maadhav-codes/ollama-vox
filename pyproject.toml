@@ -1,0 +1,28 @@
+[project]
+name = "native-ollama-voiceover"
+version = "1.0.0"
+description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollama, and Kokoro TTS"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "misaki[en]>=0.9.4",
+    "mlx-audio>=0.4.3",
+    "mlx-whisper>=0.4.3",
+    "numpy>=2.2.6",
+    "pynput>=1.8.1",
+    "pyyaml>=6.0.3",
+    "requests>=2.33.1",
+    "rumps>=0.4.0",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.13.1",
+]
+
+[project.scripts]
+native-ollama-voiceover = "main:main"
+
+[dependency-groups]
+dev = [
+    "black>=26.3.1",
+    "rich>=15.0.0",
+    "ruff>=0.15.12",
+]
