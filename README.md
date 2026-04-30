@@ -1,36 +1,44 @@
 # Native Ollama Voiceover
 
-A local macOS menubar voice assistant that records speech, transcribes it with MLX Whisper, sends the text to Ollama, and plays the response with Kokoro TTS.
+A local macOS menubar voice assistant that records speech, transcribes with MLX Whisper, gets responses from Ollama, and speaks back using Kokoro TTS.
 
-## Features
+## What You Get
 
-- Push-to-talk recording from a configurable global hotkey
-- Voice activity detection (VAD) and max recording limits
-- Local STT with `mlx-whisper`
-- Local LLM responses through an Ollama model
-- Local TTS with Kokoro voices via `mlx-audio`
-- Menubar status updates and queued processing pipeline
+- Menubar app with global push-to-talk hotkey
+- Local speech-to-text with `mlx-whisper`
+- Local text generation with Ollama (`http://localhost:11434`)
+- Local text-to-speech with `mlx-audio` + Kokoro voices
+- Queue-based STT -> LLM -> TTS pipeline
+- Retry + graceful fallback when Ollama fails mid-response
+- Status popover (`Show Status`) with model info, latency stats, and last response
 
 ## Requirements
 
-- macOS (Apple Silicon recommended for MLX)
-- Python 3.12+
-- Ollama running locally on `http://localhost:11434`
-- A pulled Ollama model matching `config.yaml` (default: `llama3.2:1b-instruct-q4_K_M`)
+- macOS (Apple Silicon recommended)
+- Python `3.12+`
+- Ollama installed and running locally
+- Ollama model available locally (default in config: `llama3.2:1b-instruct-q4_K_M`)
 
-## Installation
+## Install
 
 ```bash
 uv sync
 ```
 
-If you do not use `uv`, install with pip:
+## First-Time Setup (Model Downloads)
+
+Download recommended STT + TTS assets:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv run native-ollama-voiceover --setup
 ```
+
+This setup downloads:
+
+- `mlx-community/whisper-small.en-mlx-q4` -> `whisper/whisper-small.en-mlx-q4`
+- `mlx-community/Kokoro-82M-4bit` -> `kokoro/Kokoro-82M-4bit`
+
+It uses paths from `config.yaml` (`stt.model`, `tts.model`) and skips downloads if paths already exist.
 
 ## Run
 
@@ -38,57 +46,56 @@ pip install -e .
 uv run native-ollama-voiceover
 ```
 
-or:
-
-```bash
-python main.py
-```
-
-First-time setup (downloads recommended local STT + TTS assets):
-
-```bash
-uv run native-ollama-voiceover --setup
-```
-
-This command downloads:
-
-- `mlx-community/whisper-small.en-mlx-q4` into `stt.model`
-- `mlx-community/Kokoro-82M-4bit` into `tts.model` (including your configured voice file)
-
 ## Configuration
 
-Main config is in `config.yaml`.
+Edit `config.yaml`.
 
-Key sections:
+Important fields:
 
-- `audio`: sample rate, VAD controls, max recording duration
-- `stt.model`: local path to Whisper MLX model
-- `ollama.model` and `ollama.temperature`: model + generation behavior
-- `tts.model`, `tts.voice`, `tts.rate`, `tts.sample_rate`: Kokoro voice output
-- `hotkey.key`: trigger key combo (default `cmd+shift`)
-- `queue`: worker queue size and drop policy
-- `response_style` + `styles`: speaking style controls
+- `audio`: sample rate, VAD threshold/silence, max duration
+- `stt.model`: Whisper model path
+- `ollama.model`, `ollama.temperature`: generation model and temperature
+- `tts.model`, `tts.voice`, `tts.rate`, `tts.sample_rate`
+- `hotkey.key`: global trigger combo (default `cmd+shift`)
+- `queue.maxsize`, `queue.drop_policy`
+- `response_style` + `styles`
 
-## Health Checks at Startup
+## Startup Health Checks
 
-On startup, the app validates:
+On boot, the app checks:
 
 - STT model path exists
 - TTS model path exists
-- `mlx_whisper` and `mlx_audio` imports work
-- Ollama is reachable (`/api/tags`)
+- `mlx_whisper` and `mlx_audio` imports
+- Ollama reachability via `/api/tags`
 
-Any failures are logged with `event=startup_health_failed`.
+## Menubar Status Popover
 
-## Project Layout
+Open `Show Status` from the menu to view:
 
-- `main.py`: app startup, config loading, dependency wiring
-- `core/`: audio, STT, LLM, TTS, and worker pipeline
-- `ui/`: menubar app integration
-- `whisper/`: bundled Whisper model assets
-- `kokoro/`: bundled Kokoro model assets and voices
+- Current status (`idle`, `listening`, `busy`, `speaking`, `error`)
+- Active model identifiers (LLM, STT path, TTS model)
+- Last + rolling average latency for STT, LLM, and TTS
+- Response count and latest response text
 
-## Notes
+## Build a Double-Clickable macOS App (.app)
 
-- Model assets in `kokoro/` and `whisper/` can be large.
-- If your hotkey conflicts with system shortcuts, update `hotkey.key` in `config.yaml`.
+```bash
+uv sync
+uv run python setup.py py2app
+open dist/Native\ Ollama\ Voiceover.app
+```
+
+Notes:
+
+- Bundle includes `config.yaml`, `whisper/`, and `kokoro/`
+- macOS will request microphone permission on first run
+- For unsigned local builds, use right-click -> Open if Gatekeeper warns
+
+## Project Structure
+
+- `main.py`: entrypoint, setup flag, health checks, dependency wiring
+- `core/`: audio capture, STT, LLM client, TTS, worker pipeline
+- `ui/menubar.py`: menubar app and status UI
+- `config.yaml`: runtime configuration
+- `setup.py`: `py2app` packaging config

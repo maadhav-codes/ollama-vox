@@ -26,6 +26,29 @@ class VoiceApp(rumps.App):
 
         self._start_hotkey_listener()
 
+    def _latency_indicator(self):
+        llm_avg = self.metrics.get("llm_ms_avg")
+        if llm_avg is None:
+            return ("⚪", "--")
+        if llm_avg <= 1200:
+            dot = "🟢"
+        elif llm_avg <= 2600:
+            dot = "🟡"
+        else:
+            dot = "🔴"
+        return (dot, f"{int(round(llm_avg))}ms")
+
+    def _render_title(self):
+        icon_map = {
+            "idle": "🎤",
+            "listening": "🔴",
+            "busy": "⚡",
+            "speaking": "🗣️",
+            "error": "❌",
+        }
+        dot, llm_ms = self._latency_indicator()
+        self.title = f"{icon_map.get(self.status, '🎤')} {dot}{llm_ms}"
+
     @rumps.timer(0.2)
     def auto_stop_tick(self, _):
         if self.recording and self.recorder.should_auto_stop():
@@ -87,19 +110,13 @@ class VoiceApp(rumps.App):
 
     def set_status(self, status):
         self.status = status
-        icon_map = {
-            "idle": "🎤",
-            "listening": "🔴",
-            "busy": "⚡",
-            "speaking": "🗣️",
-            "error": "❌",
-        }
-        self.title = icon_map.get(status, "🎤")
+        self._render_title()
         if self._status_item is not None:
             self._status_item.title = f"Status: {status}"
 
     def set_metrics(self, metrics):
         self.metrics = metrics or {}
+        self._render_title()
 
     def _fmt_ms(self, value):
         if value is None:
@@ -110,7 +127,9 @@ class VoiceApp(rumps.App):
         llm_model = getattr(self.pipeline.llm, "model", "unknown")
         stt_model = getattr(self.pipeline.stt, "model_path", None) or "configured"
         tts_model = getattr(self.pipeline.tts, "model_id", "configured")
-        last_response = (self.metrics.get("last_response") or "No responses yet.").strip()
+        last_response = (
+            self.metrics.get("last_response") or "No responses yet."
+        ).strip()
         if len(last_response) > 220:
             last_response = last_response[:217] + "..."
 
