@@ -4,7 +4,8 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 
 ## What You Get
 
-- Menubar app with global push-to-talk hotkey
+- Menubar app built with `PySide6` + `QSystemTrayIcon`
+- Global push-to-talk hotkey (`pynput`)
 - Local speech-to-text with `mlx-whisper`
 - Local text generation with Ollama (`http://localhost:11434`)
 - Local text-to-speech with `mlx-audio` + Kokoro voices
@@ -18,6 +19,7 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 - Python `3.12+`
 - Ollama installed and running locally
 - Ollama model available locally (default in config: `llama3.2:1b-instruct-q4_K_M`)
+- Accessibility permission enabled for the process running the app (required by `pynput` global hotkey)
 
 ## Install
 
@@ -46,6 +48,12 @@ It uses paths from `config.yaml` (`stt.model`, `tts.model`) and skips downloads 
 uv run native-ollama-voiceover
 ```
 
+If running directly during development:
+
+```bash
+python3 main.py
+```
+
 ## Configuration
 
 Edit `config.yaml`.
@@ -69,7 +77,26 @@ On boot, the app checks:
 - `mlx_whisper` and `mlx_audio` imports
 - Ollama reachability via `/api/tags`
 
-## Menubar Status Popover
+## Tray UI (PySide6)
+
+The app uses a `QSystemTrayIcon` context menu with:
+
+- `Start Listening`
+- `Stop Listening`
+- `Hotkey: ...`
+- `Status: ...` (dynamic)
+- `Show Status`
+- `Quit`
+
+Notes:
+
+- On macOS, `QSystemTrayIcon` does not support dynamic text rendered next to the tray icon (unlike some native menubar wrappers). Live status is shown via tooltip and the menu status row.
+- Tray icon loading order:
+  - `assets/icons/tray_<status>_template.png`
+  - `assets/icons/tray_template.png`
+  - generated microphone fallback icon with colored status badge
+
+## Status Panel
 
 Open `Show Status` from the menu to view:
 
@@ -77,6 +104,8 @@ Open `Show Status` from the menu to view:
 - Active model identifiers (LLM, STT path, TTS model)
 - Last + rolling average latency for STT, LLM, and TTS
 - Response count and latest response text
+- Copy button for last response text
+- Escape-to-close and close button
 
 ## Build a Double-Clickable macOS App (.app)
 
@@ -90,12 +119,13 @@ Notes:
 
 - Bundle includes `config.yaml`, `whisper/`, and `kokoro/`
 - macOS will request microphone permission on first run
+- macOS will also require Accessibility permission for global hotkey capture (`pynput`)
 - For unsigned local builds, use right-click -> Open if Gatekeeper warns
 
 ## Project Structure
 
 - `main.py`: entrypoint, setup flag, health checks, dependency wiring
 - `core/`: audio capture, STT, LLM client, TTS, worker pipeline
-- `ui/menubar.py`: menubar app and status UI
+- `ui/tray_app.py`: Qt tray app (`QSystemTrayIcon`) and rich status panel
 - `config.yaml`: runtime configuration
 - `setup.py`: `py2app` packaging config

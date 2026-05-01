@@ -10,7 +10,7 @@ from core.stt import STT
 from core.llm import OllamaClient
 from core.tts import TTS
 from core.workers import Pipeline
-from ui.menubar import VoiceApp
+from ui.tray_app import VoiceTrayApp as VoiceApp
 
 
 def load_config():

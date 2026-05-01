@@ -13,7 +13,7 @@ dependencies = [
     "pynput>=1.8.1",
     "pyyaml>=6.0.3",
     "requests>=2.33.1",
-    "rumps>=0.4.0",
+    "pyside6>=6.8.0",
     "sounddevice>=0.5.5",
     "soundfile>=0.13.1",
 ]
