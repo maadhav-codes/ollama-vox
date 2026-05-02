@@ -255,6 +255,7 @@ class VoiceTrayApp(QSystemTrayIcon):
 
         self._status_a = QAction("Status: idle", self.menu)
         self._show_a = QAction("Show Panel", self.menu)
+        self._change_model_a = QAction("Change Model...", self.menu)
         self._quit_a = QAction("Quit", self.menu)
 
         self._start_a.triggered.connect(self.start)
@@ -262,6 +263,7 @@ class VoiceTrayApp(QSystemTrayIcon):
 
         self._status_a.setEnabled(False)
         self._show_a.triggered.connect(self.show_status)
+        self._change_model_a.triggered.connect(self.change_model)
         self._quit_a.triggered.connect(self.quit)
 
         for a in (
@@ -269,6 +271,7 @@ class VoiceTrayApp(QSystemTrayIcon):
             self._stop_a,
             self._status_a,
             self._show_a,
+            self._change_model_a,
         ):
             self.menu.addAction(a)
         self.menu.addSeparator()
@@ -392,6 +395,30 @@ class VoiceTrayApp(QSystemTrayIcon):
         self.panel.show()
         self.panel.raise_()
         self.panel.activateWindow()
+
+    def change_model(self) -> None:
+        from ui.model_setup import OllamaModelWizard
+        import yaml
+        from core.config import AppConfig
+
+        base_dir = Path(__file__).parent.parent.resolve()
+        config_path = base_dir / "config.yaml"
+        if not config_path.exists():
+            config_path = Path("config.yaml")
+
+        try:
+            with open(config_path) as f:
+                data = yaml.safe_load(f) or {}
+            config = AppConfig.from_dict(data)
+        except Exception:
+            return
+
+        wizard = OllamaModelWizard(config)
+        success = wizard.run(force_setup=True)
+        if success:
+            self.pipeline.llm.model = config.ollama.model
+            self.pipeline.llm.history = []
+            self.panel.refresh(self.pipeline, self.metrics)
 
     def quit(self) -> None:
         self._auto_stop_t.stop()

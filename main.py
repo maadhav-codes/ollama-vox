@@ -29,6 +29,7 @@ from core.tts import TTS
 from core.workers import Pipeline
 from ui.tray_app import VoiceTrayApp as VoiceApp
 from core.config import AppConfig, ConfigValidationError
+from ui.model_setup import OllamaModelWizard
 
 
 def load_config():
@@ -162,9 +163,20 @@ def main():
     configure_logging()
     config = load_config()
 
+    import sys
+    from PySide6.QtWidgets import QApplication
+
+    qt_app = QApplication.instance() or QApplication(sys.argv)
+
     if args.setup:
         run_setup(config)
+        wizard = OllamaModelWizard(config)
+        wizard.run(force_setup=True)
         return
+
+    wizard = OllamaModelWizard(config)
+    if not wizard.run():
+        sys.exit(1)
 
     run_startup_health_checks(config)
 
