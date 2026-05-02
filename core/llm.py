@@ -89,7 +89,7 @@ class OllamaClient:
         )
         return self.fallback_message
 
-    def stream_generate(self, prompt: str) -> Iterable[str]:
+    def stream_generate(self, prompt: str, cancel_event=None) -> Iterable[str]:
         self.history.append({"role": "user", "content": prompt})
 
         if len(self.history) > self.history_size * 2:
@@ -115,6 +115,8 @@ class OllamaClient:
                 ) as response:
                     response.raise_for_status()
                     for line in response.iter_lines(decode_unicode=True):
+                        if cancel_event and cancel_event.is_set():
+                            return
                         if not line:
                             continue
                         try:

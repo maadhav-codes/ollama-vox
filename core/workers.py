@@ -1,5 +1,5 @@
 from queue import Queue, Empty
-from threading import Thread
+from threading import Thread, Event
 import logging
 import time
 
@@ -33,6 +33,7 @@ class Pipeline:
         self.response_style = response_style
 
         self.running = True
+        self.cancel_event = Event()
         self._threads = []
         self.metrics = {
             "stt_ms_last": None,
@@ -101,13 +102,22 @@ class Pipeline:
         return True
 
     def interrupt_speaking(self):
+        self.cancel_event.set()
         try:
             self.tts.stop()
-            self._set_status("idle")
         except Exception as exc:
             logger.exception("event=tts_interrupt_error error=%r", exc)
 
+        for q in [self.text_q, self.response_q]:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except Empty:
+                    break
+        self._set_status("idle")
+
     def enqueue_audio(self, audio):
+        self.cancel_event.clear()
         return self._safe_put(self.audio_q, audio, "audio")
 
     def start(self):
@@ -171,12 +181,19 @@ class Pipeline:
                 logger.exception("event=llm_worker_error error=%r", exc)
                 continue
 
+            if self.cancel_event.is_set():
+                continue
+
             try:
                 self._set_status("busy")
                 start = time.perf_counter()
-                token_stream = self.llm.stream_generate(text)
+                token_stream = self.llm.stream_generate(
+                    text, cancel_event=self.cancel_event
+                )
                 response_parts = []
                 for sentence in self.llm.sentence_chunks(token_stream):
+                    if self.cancel_event.is_set():
+                        break
                     response_parts.append(sentence)
                     self._safe_put(self.response_q, sentence, "response")
                 self._update_metric(
