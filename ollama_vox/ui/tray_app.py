@@ -91,7 +91,7 @@ class StatusPanel(QWidget):
     def __init__(self, app: "VoiceTrayApp") -> None:
         super().__init__()
         self.app = app
-        self.setWindowTitle("Ollama Voice")
+        self.setWindowTitle("Ollama Vox")
         self.setWindowFlags(
             Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
