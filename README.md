@@ -18,8 +18,18 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 
 ## Installation
 
-If installing from source:
+The easiest way to install is via `pip` or `uv`:
+
 ```bash
+pip install ollama-vox
+# or if using uv
+uv tool install ollama-vox
+```
+
+If installing from source for development:
+```bash
+git clone https://github.com/maadhav-codes/ollama-voiceover.git
+cd ollama-voiceover
 uv sync
 ```
 
