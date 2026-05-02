@@ -215,8 +215,7 @@ def main():
     )
     pipeline.start()
 
-    hotkey = config.hotkey.key
-    app = VoiceApp(pipeline, recorder, hotkey=hotkey)
+    app = VoiceApp(pipeline, recorder)
     pipeline.set_status_callback(app.set_status)
     pipeline.set_metrics_callback(app.set_metrics)
     app.run()

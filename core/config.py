@@ -86,14 +86,6 @@ class TTSConfig:
 
 
 @dataclass
-class HotkeyConfig:
-    key: str = "cmd+shift"
-
-    def __post_init__(self):
-        self.key = _coerce_type("hotkey.key", self.key, str)
-
-
-@dataclass
 class QueueConfig:
     maxsize: int = 4
     drop_policy: str = "drop_oldest"
@@ -128,7 +120,7 @@ class AppConfig:
     stt: STTConfig = field(default_factory=STTConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
-    hotkey: HotkeyConfig = field(default_factory=HotkeyConfig)
+
     queue: QueueConfig = field(default_factory=QueueConfig)
     response_style: str = "neutral"
     styles: Dict[str, StyleConfig] = field(default_factory=dict)
@@ -143,7 +135,7 @@ class AppConfig:
             stt_cfg = STTConfig(**data.get("stt", {}))
             ollama_cfg = OllamaConfig(**data.get("ollama", {}))
             tts_cfg = TTSConfig(**data.get("tts", {}))
-            hotkey_cfg = HotkeyConfig(**data.get("hotkey", {}))
+
             queue_cfg = QueueConfig(**data.get("queue", {}))
         except TypeError as e:
             raise ConfigValidationError(f"Unknown configuration key provided: {e}")
@@ -164,7 +156,6 @@ class AppConfig:
             stt=stt_cfg,
             ollama=ollama_cfg,
             tts=tts_cfg,
-            hotkey=hotkey_cfg,
             queue=queue_cfg,
             response_style=str(data.get("response_style", "neutral")),
             styles=styles,

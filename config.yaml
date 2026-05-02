@@ -20,9 +20,6 @@ tts:
   sample_rate: 24000
   split_chars: 180
 
-hotkey:
-  key: cmd+shift
-
 queue:
   maxsize: 4
   drop_policy: drop_oldest

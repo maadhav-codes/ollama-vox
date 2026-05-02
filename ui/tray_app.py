@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from pynput import keyboard
+
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -29,7 +29,7 @@ STATUS_COLOR = {
 }
 
 STATUS_SUB = {
-    "idle": "⌘⇧ to start",
+    "idle": "Ready",
     "listening": "recording…",
     "busy": "thinking…",
     "speaking": "speaking…",
@@ -233,7 +233,7 @@ class VoiceTrayApp(QSystemTrayIcon):
     _status_signal = Signal(str)
     _metrics_signal = Signal(dict)
 
-    def __init__(self, pipeline: Any, recorder: Any, hotkey: str | None = None) -> None:
+    def __init__(self, pipeline: Any, recorder: Any) -> None:
         self.qt_app = QApplication.instance() or QApplication(sys.argv)
         self.qt_app.setQuitOnLastWindowClosed(False)
         super().__init__()
@@ -241,8 +241,7 @@ class VoiceTrayApp(QSystemTrayIcon):
         self.pipeline = pipeline
         self.recorder = recorder
         self.recording = False
-        self.hotkey = hotkey or "cmd+shift"
-        self._hotkey_listener: keyboard.Listener | None = None
+
         self.status = "idle"
         self.metrics: dict[str, Any] = {}
 
@@ -253,14 +252,14 @@ class VoiceTrayApp(QSystemTrayIcon):
         self.menu = QMenu()
         self._start_a = QAction("Start Listening", self.menu)
         self._stop_a = QAction("Stop Listening", self.menu)
-        self._hotkey_a = QAction(f"Hotkey: {self.hotkey}", self.menu)
+
         self._status_a = QAction("Status: idle", self.menu)
         self._show_a = QAction("Show Panel", self.menu)
         self._quit_a = QAction("Quit", self.menu)
 
         self._start_a.triggered.connect(self.start)
         self._stop_a.triggered.connect(self.stop)
-        self._hotkey_a.setEnabled(False)
+
         self._status_a.setEnabled(False)
         self._show_a.triggered.connect(self.show_status)
         self._quit_a.triggered.connect(self.quit)
@@ -268,7 +267,6 @@ class VoiceTrayApp(QSystemTrayIcon):
         for a in (
             self._start_a,
             self._stop_a,
-            self._hotkey_a,
             self._status_a,
             self._show_a,
         ):
@@ -291,7 +289,7 @@ class VoiceTrayApp(QSystemTrayIcon):
         self._pump.start()
 
         signal.signal(signal.SIGINT, lambda *_: QTimer.singleShot(0, self.quit))
-        self._start_hotkey_listener()
+
         self._refresh_menu()
 
     def _set_icon(self, status: str) -> None:
@@ -334,52 +332,6 @@ class VoiceTrayApp(QSystemTrayIcon):
         icon = QIcon()
         icon.addPixmap(pix)
         return icon
-
-    def _normalize(self, key: Any) -> str | None:
-        table = {
-            keyboard.Key.cmd: "cmd",
-            keyboard.Key.cmd_l: "cmd",
-            keyboard.Key.cmd_r: "cmd",
-            keyboard.Key.shift: "shift",
-            keyboard.Key.shift_l: "shift",
-            keyboard.Key.shift_r: "shift",
-            keyboard.Key.ctrl: "ctrl",
-            keyboard.Key.ctrl_l: "ctrl",
-            keyboard.Key.ctrl_r: "ctrl",
-            keyboard.Key.alt: "alt",
-            keyboard.Key.alt_l: "alt",
-            keyboard.Key.alt_r: "alt",
-        }
-        if key in table:
-            return table[key]
-        try:
-            return key.char.lower() if key.char else None
-        except AttributeError:
-            return None
-
-    def _start_hotkey_listener(self) -> None:
-        keys = [k.strip().lower() for k in self.hotkey.split("+") if k.strip()]
-        if not keys:
-            return
-        pressed: set[str] = set()
-
-        def on_press(key: Any) -> None:
-            t = self._normalize(key)
-            if t:
-                pressed.add(t)
-            if all(k in pressed for k in keys):
-                QTimer.singleShot(0, self._toggle)
-
-        def on_release(key: Any) -> None:
-            t = self._normalize(key)
-            if t:
-                pressed.discard(t)
-
-        self._hotkey_listener = keyboard.Listener(
-            on_press=on_press, on_release=on_release
-        )
-        self._hotkey_listener.daemon = True
-        self._hotkey_listener.start()
 
     def _toggle(self) -> None:
         self.stop() if self.recording else self.start()
@@ -444,8 +396,7 @@ class VoiceTrayApp(QSystemTrayIcon):
     def quit(self) -> None:
         self._auto_stop_t.stop()
         self._pump.stop()
-        if self._hotkey_listener:
-            self._hotkey_listener.stop()
+
         if self.recording:
             self.recorder.stop()
             self.recording = False

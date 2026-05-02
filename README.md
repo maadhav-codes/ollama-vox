@@ -5,7 +5,7 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 ## What You Get
 
 - Menubar app built with `PySide6` + `QSystemTrayIcon`
-- Global push-to-talk hotkey (`pynput`)
+
 - Local speech-to-text with `mlx-whisper`
 - Local text generation with Ollama (`http://localhost:11434`)
 - Local text-to-speech with `mlx-audio` + Kokoro voices
@@ -19,7 +19,7 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 - Python `3.12+`
 - Ollama installed and running locally
 - Ollama model available locally (default in config: `llama3.2:1b-instruct-q4_K_M`)
-- Accessibility permission enabled for the process running the app (required by `pynput` global hotkey)
+
 
 ## Install
 
@@ -64,7 +64,7 @@ Important fields:
 - `stt.model`: Whisper model path
 - `ollama.model`, `ollama.temperature`: generation model and temperature
 - `tts.model`, `tts.voice`, `tts.rate`, `tts.sample_rate`
-- `hotkey.key`: global trigger combo (default `cmd+shift`)
+
 - `queue.maxsize`, `queue.drop_policy`
 - `response_style` + `styles`
 
@@ -83,7 +83,6 @@ The app uses a `QSystemTrayIcon` context menu with:
 
 - `Start Listening`
 - `Stop Listening`
-- `Hotkey: ...`
 - `Status: ...` (dynamic)
 - `Show Status`
 - `Quit`
@@ -119,7 +118,7 @@ Notes:
 
 - Bundle includes `config.yaml`, `whisper/`, and `kokoro/`
 - macOS will request microphone permission on first run
-- macOS will also require Accessibility permission for global hotkey capture (`pynput`)
+
 - For unsigned local builds, use right-click -> Open if Gatekeeper warns
 
 ## Project Structure
