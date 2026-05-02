@@ -4,14 +4,14 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 
 ## What You Get
 
-- Menubar app built with `PySide6` + `QSystemTrayIcon`
-
-- Local speech-to-text with `mlx-whisper`
-- Local text generation with Ollama (`http://localhost:11434`)
-- Local text-to-speech with `mlx-audio` + Kokoro voices
-- Queue-based STT -> LLM -> TTS pipeline
-- Retry + graceful fallback when Ollama fails mid-response
-- Status popover (`Show Status`) with model info, latency stats, and last response
+- **Menubar app** built with `PySide6` + `QSystemTrayIcon`
+- **Local speech-to-text** with `mlx-whisper`
+- **Local text generation** with Ollama (`http://localhost:11434`)
+- **Local text-to-speech** with `mlx-audio` + Kokoro voices
+- **Robust Pipeline**: Queue-based STT -> LLM -> TTS pipeline running asynchronously.
+- **Resilience**: Retry logic + graceful fallbacks for streaming API interruptions or TTS rendering type errors.
+- **Strict Typed Configuration**: Validates `config.yaml` using Python Dataclasses to prevent runtime crashes.
+- **Status panel** (`Show Status`) with model info, rolling latency stats, and response history.
 
 ## Requirements
 
@@ -19,7 +19,6 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 - Python `3.12+`
 - Ollama installed and running locally
 - Ollama model available locally (default in config: `llama3.2:1b-instruct-q4_K_M`)
-
 
 ## Install
 
@@ -56,17 +55,16 @@ python3 main.py
 
 ## Configuration
 
-Edit `config.yaml`.
+Edit `config.yaml`. Configuration is strictly typed and validated on boot.
 
 Important fields:
 
-- `audio`: sample rate, VAD threshold/silence, max duration
+- `audio`: `sample_rate`, VAD thresholds (`vad_threshold`, `vad_silence_seconds`), `max_duration_seconds`
 - `stt.model`: Whisper model path
 - `ollama.model`, `ollama.temperature`: generation model and temperature
 - `tts.model`, `tts.voice`, `tts.rate`, `tts.sample_rate`
-
 - `queue.maxsize`, `queue.drop_policy`
-- `response_style` + `styles`
+- `response_style` + `styles`: Used to dynamically map different pitch/speed to different agent responses.
 
 ## Startup Health Checks
 
@@ -76,6 +74,7 @@ On boot, the app checks:
 - TTS model path exists
 - `mlx_whisper` and `mlx_audio` imports
 - Ollama reachability via `/api/tags`
+- `config.yaml` structure and type validation.
 
 ## Tray UI (PySide6)
 
@@ -118,13 +117,18 @@ Notes:
 
 - Bundle includes `config.yaml`, `whisper/`, and `kokoro/`
 - macOS will request microphone permission on first run
-
 - For unsigned local builds, use right-click -> Open if Gatekeeper warns
 
 ## Project Structure
 
 - `main.py`: entrypoint, setup flag, health checks, dependency wiring
-- `core/`: audio capture, STT, LLM client, TTS, worker pipeline
+- `core/`:
+  - `audio.py`: audio capture using sounddevice
+  - `config.py`: strict type-checked dataclasses for configuration validation
+  - `llm.py`: streaming Ollama client
+  - `stt.py`: MLX Whisper wrapper
+  - `tts.py`: Kokoro MLX Audio wrapper
+  - `workers.py`: Queue-based asynchronous thread pipeline
 - `ui/tray_app.py`: Qt tray app (`QSystemTrayIcon`) and rich status panel
 - `config.yaml`: runtime configuration
 - `setup.py`: `py2app` packaging config
