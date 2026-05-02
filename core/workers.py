@@ -56,7 +56,9 @@ class Pipeline:
             try:
                 self.status_callback(status)
             except Exception as exc:
-                logger.exception("event=status_callback_failed status=%s error=%r", status, exc)
+                logger.exception(
+                    "event=status_callback_failed status=%s error=%r", status, exc
+                )
 
     def _record_error(self, exc):
         import datetime

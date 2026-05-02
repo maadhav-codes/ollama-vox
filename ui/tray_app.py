@@ -411,7 +411,14 @@ class VoiceTrayApp(QSystemTrayIcon):
             with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             config = AppConfig.from_dict(data)
-        except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError, AttributeError):
+        except (
+            OSError,
+            yaml.YAMLError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+        ):
             return
 
         wizard = OllamaModelWizard(config)

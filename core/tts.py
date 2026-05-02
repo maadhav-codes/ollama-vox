@@ -42,7 +42,15 @@ class TTS:
                 data = yaml.safe_load(f) or {}
             config = AppConfig.from_dict(data)
             return config.tts.model
-        except (OSError, yaml.YAMLError, ImportError, AttributeError, KeyError, TypeError, ValueError):
+        except (
+            OSError,
+            yaml.YAMLError,
+            ImportError,
+            AttributeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ):
             return "./kokoro/Kokoro-82M-4bit"
 
     def _load_model(self):
