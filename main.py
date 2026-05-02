@@ -28,11 +28,19 @@ from core.llm import OllamaClient
 from core.tts import TTS
 from core.workers import Pipeline
 from ui.tray_app import VoiceTrayApp as VoiceApp
+from core.config import AppConfig, ConfigValidationError
 
 
 def load_config():
     with open("config.yaml") as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f) or {}
+    try:
+        return AppConfig.from_dict(data)
+    except ConfigValidationError as e:
+        print(f"Configuration Error: {e}")
+        import sys
+
+        sys.exit(1)
 
 
 def configure_logging():
@@ -44,8 +52,8 @@ def configure_logging():
 
 def run_startup_health_checks(config):
     errors = []
-    tts_model = config.get("tts", {}).get("model")
-    stt_model = config.get("stt", {}).get("model")
+    tts_model = config.tts.model
+    stt_model = config.stt.model
     if tts_model and not os.path.exists(tts_model):
         errors.append(f"missing_tts_model:{tts_model}")
     if stt_model and not os.path.exists(stt_model):
@@ -56,7 +64,7 @@ def run_startup_health_checks(config):
     except Exception as exc:
         errors.append(f"missing_dependency:{exc}")
 
-    ollama_endpoint = config.get("ollama", {}).get("endpoint", "http://localhost:11434")
+    ollama_endpoint = config.ollama.endpoint
     try:
         r = requests.get(f"{ollama_endpoint}/api/tags", timeout=2)
         r.raise_for_status()
@@ -78,9 +86,9 @@ def _ensure_parent(path):
 
 def run_setup(config):
     logger = logging.getLogger(__name__)
-    stt_path = config.get("stt", {}).get("model", "./whisper/whisper-small.en-mlx-q4")
-    tts_path = config.get("tts", {}).get("model", "./kokoro/Kokoro-82M-4bit")
-    voice = config.get("tts", {}).get("voice", "af_bella")
+    stt_path = config.stt.model
+    tts_path = config.tts.model
+    voice = config.tts.voice
 
     logger.info(
         "event=setup_started stt_path=%s tts_path=%s voice=%s",
@@ -145,43 +153,54 @@ def main():
 
     run_startup_health_checks(config)
 
-    audio_cfg = config.get("audio", {})
+    audio_cfg = config.audio
     recorder = AudioRecorder(
-        sample_rate=audio_cfg.get("sample_rate", 16000),
-        vad_enabled=audio_cfg.get("vad_enabled", True),
-        vad_threshold=audio_cfg.get("vad_threshold", 0.015),
-        vad_silence_seconds=audio_cfg.get("vad_silence_seconds", 1.2),
-        max_duration_seconds=audio_cfg.get("max_duration_seconds", 20.0),
+        sample_rate=audio_cfg.sample_rate,
+        vad_enabled=audio_cfg.vad_enabled,
+        vad_threshold=audio_cfg.vad_threshold,
+        vad_silence_seconds=audio_cfg.vad_silence_seconds,
+        max_duration_seconds=audio_cfg.max_duration_seconds,
     )
 
-    stt = STT(config["stt"]["model"])
+    stt = STT(config.stt.model)
     llm = OllamaClient(
-        endpoint=config["ollama"].get("endpoint", "http://localhost:11434"),
-        model=config["ollama"]["model"],
-        temperature=config["ollama"]["temperature"],
+        endpoint=config.ollama.endpoint,
+        model=config.ollama.model,
+        temperature=config.ollama.temperature,
     )
     tts = TTS(
-        voice=config["tts"]["voice"],
-        rate=config["tts"]["rate"],
-        model_id=config["tts"].get("model"),
-        sample_rate=config["tts"].get("sample_rate", 24000),
-        split_chars=config["tts"].get("split_chars", 180),
-        style_map=config.get("styles", {}),
+        voice=config.tts.voice,
+        rate=config.tts.rate,
+        model_id=config.tts.model,
+        sample_rate=config.tts.sample_rate,
+        split_chars=config.tts.split_chars,
+        style_map={
+            k: {
+                sk: sv
+                for sk, sv in {
+                    "speed": v.speed,
+                    "pitch": v.pitch,
+                    "voice": v.voice,
+                }.items()
+                if sv is not None
+            }
+            for k, v in config.styles.items()
+        },
     )
 
-    queue_cfg = config.get("queue", {})
+    queue_cfg = config.queue
     pipeline = Pipeline(
         stt,
         llm,
         tts,
-        audio_cfg.get("sample_rate", 16000),
-        queue_maxsize=queue_cfg.get("maxsize", 4),
-        drop_policy=queue_cfg.get("drop_policy", "drop_oldest"),
-        response_style=config.get("response_style", "neutral"),
+        audio_cfg.sample_rate,
+        queue_maxsize=queue_cfg.maxsize,
+        drop_policy=queue_cfg.drop_policy,
+        response_style=config.response_style,
     )
     pipeline.start()
 
-    hotkey = config.get("hotkey", {}).get("key", "cmd+shift")
+    hotkey = config.hotkey.key
     app = VoiceApp(pipeline, recorder, hotkey=hotkey)
     pipeline.set_status_callback(app.set_status)
     pipeline.set_metrics_callback(app.set_metrics)

@@ -34,9 +34,12 @@ class TTS:
 
     def _load_model_id_from_config(self) -> str:
         try:
+            from core.config import AppConfig
+
             with open("config.yaml") as f:
-                config = yaml.safe_load(f) or {}
-            return config.get("tts", {}).get("model")
+                data = yaml.safe_load(f) or {}
+            config = AppConfig.from_dict(data)
+            return config.tts.model
         except Exception:
             return "./kokoro/Kokoro-82M-4bit"
 
