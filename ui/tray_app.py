@@ -126,7 +126,12 @@ class StatusPanel(QWidget):
         r_stt, self._stt_val = _info_row("stt")
         r_lat, self._lat_val = _info_row("latency", "—")
         r_cnt, self._cnt_val = _info_row("responses", "0")
-        for r in (r_model, r_stt, r_lat, r_cnt):
+
+        r_mic, self._mic_val = _info_row("mic active", "No")
+        r_mod, self._mod_val = _info_row("model path exists", "—")
+        r_ollama, self._ollama_val = _info_row("ollama reachable", "—")
+
+        for r in (r_model, r_stt, r_lat, r_cnt, r_mic, r_mod, r_ollama):
             root.addWidget(r)
 
         self._error_wrap = QWidget()
@@ -181,6 +186,8 @@ class StatusPanel(QWidget):
         self._status_lbl.setText(status)
         self._sub_lbl.setText(STATUS_SUB.get(status, ""))
         self._main_btn.setText("Stop" if status == "listening" else "Start")
+        if hasattr(self, "_mic_val"):
+            self._mic_val.setText("Yes" if self.app.recording else "No")
 
     def refresh(self, pipeline: Any, metrics: dict[str, Any]) -> None:
         self._llm_val.setText(str(getattr(pipeline.llm, "model", "—")))
@@ -206,6 +213,20 @@ class StatusPanel(QWidget):
             self.close()
         else:
             super().keyPressEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        import os
+        import requests
+
+        stt_model = getattr(self.app.pipeline.stt, "model", "")
+        self._mod_val.setText("Yes" if os.path.exists(stt_model) else "No")
+        endpoint = getattr(self.app.pipeline.llm, "endpoint", "http://localhost:11434")
+        try:
+            r = requests.get(f"{endpoint}/api/tags", timeout=0.5)
+            self._ollama_val.setText("Yes" if r.ok else "No")
+        except Exception:
+            self._ollama_val.setText("No")
 
 
 class VoiceTrayApp(QSystemTrayIcon):

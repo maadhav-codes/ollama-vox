@@ -32,8 +32,23 @@ from core.config import AppConfig, ConfigValidationError
 
 
 def load_config():
-    with open("config.yaml") as f:
-        data = yaml.safe_load(f) or {}
+    from pathlib import Path
+
+    base_dir = Path(__file__).parent.resolve()
+    config_path = base_dir / "config.yaml"
+
+    if not config_path.exists():
+        config_path = Path("config.yaml")
+
+    try:
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        print(f"Configuration Error: Could not find config.yaml at {config_path}")
+        import sys
+
+        sys.exit(1)
+
     try:
         return AppConfig.from_dict(data)
     except ConfigValidationError as e:
