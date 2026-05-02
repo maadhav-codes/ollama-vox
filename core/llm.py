@@ -10,12 +10,14 @@ logger = logging.getLogger(__name__)
 class OllamaClient:
     def __init__(
         self,
+        endpoint,
         model,
         temperature,
         retries=2,
         backoff_seconds=0.5,
         fallback_message="Sorry, my brain glitched for a moment. Please try again.",
     ):
+        self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.temperature = temperature
         self.retries = retries
@@ -34,13 +36,27 @@ class OllamaClient:
         for attempt in range(self.retries + 1):
             try:
                 response = requests.post(
-                    "http://localhost:11434/api/generate",
+                    f"{self.endpoint}/api/generate",
                     json=payload,
                     timeout=60,
                 )
                 response.raise_for_status()
+
+                content_type = response.headers.get("Content-Type", "")
+                if "application/json" not in content_type:
+                    raise ValueError(f"Expected JSON response, got {content_type}")
+
                 data = response.json()
-                text = data.get("response", "").strip()
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid response format: expected JSON object")
+
+                text = data.get("response")
+                if not isinstance(text, str):
+                    raise ValueError(
+                        "Invalid response format: missing or non-string 'response' field"
+                    )
+
+                text = text.strip()
                 if text:
                     return text
                 raise RuntimeError("Ollama returned an empty response")
@@ -77,7 +93,7 @@ class OllamaClient:
         for attempt in range(self.retries + 1):
             try:
                 with requests.post(
-                    "http://localhost:11434/api/generate",
+                    f"{self.endpoint}/api/generate",
                     json=payload,
                     timeout=120,
                     stream=True,
@@ -86,9 +102,21 @@ class OllamaClient:
                     for line in response.iter_lines(decode_unicode=True):
                         if not line:
                             continue
-                        data = requests.models.complexjson.loads(line)
-                        token = data.get("response", "")
-                        if token:
+                        try:
+                            data = requests.models.complexjson.loads(line)
+                        except ValueError as e:
+                            logger.warning(
+                                "event=ollama_stream_json_error error=%r line=%r",
+                                e,
+                                line,
+                            )
+                            continue
+
+                        if not isinstance(data, dict):
+                            continue
+
+                        token = data.get("response")
+                        if isinstance(token, str) and token:
                             emitted_any = True
                             yield token
                     return

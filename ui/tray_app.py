@@ -405,6 +405,7 @@ class VoiceTrayApp(QSystemTrayIcon):
         self._pump.stop()
         if self._hotkey_listener:
             self._hotkey_listener.stop()
+        self.pipeline.stop()
         self.hide()
         self.qt_app.quit()
 

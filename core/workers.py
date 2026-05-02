@@ -1,4 +1,4 @@
-from queue import Queue
+from queue import Queue, Empty
 from threading import Thread
 import logging
 import time
@@ -33,6 +33,7 @@ class Pipeline:
         self.response_style = response_style
 
         self.running = True
+        self._threads = []
         self.metrics = {
             "stt_ms_last": None,
             "llm_ms_last": None,
@@ -54,7 +55,7 @@ class Pipeline:
             except Exception:
                 logger.exception("event=status_callback_failed status=%s", status)
 
-    def _set_metrics_callback(self, callback):
+    def set_metrics_callback(self, callback):
         self.metrics_callback = callback
 
     def _update_metric(self, key_last, key_avg, elapsed_ms):
@@ -100,14 +101,35 @@ class Pipeline:
         return self._safe_put(self.audio_q, audio, "audio")
 
     def start(self):
-        Thread(target=self.stt_worker, daemon=True).start()
-        Thread(target=self.llm_worker, daemon=True).start()
-        Thread(target=self.tts_worker, daemon=True).start()
+        self._threads = [
+            Thread(target=self.stt_worker, daemon=True),
+            Thread(target=self.llm_worker, daemon=True),
+            Thread(target=self.tts_worker, daemon=True),
+        ]
+        for t in self._threads:
+            t.start()
+
+    def stop(self):
+        self.running = False
+        for t in self._threads:
+            t.join(timeout=1.0)
 
     def stt_worker(self):
         while self.running:
             try:
-                audio = self.audio_q.get()
+                audio = self.audio_q.get(timeout=0.5)
+            except Empty:
+                continue
+            except Exception as exc:
+                self._set_status("error")
+                logger.exception(
+                    "event=stt_worker_error sample_rate=%s error=%r",
+                    self.sr,
+                    exc,
+                )
+                continue
+
+            try:
                 self._set_status("busy")
                 start = time.perf_counter()
                 text = self.stt.transcribe(audio, self.sr)
@@ -131,7 +153,15 @@ class Pipeline:
     def llm_worker(self):
         while self.running:
             try:
-                text = self.text_q.get()
+                text = self.text_q.get(timeout=0.5)
+            except Empty:
+                continue
+            except Exception as exc:
+                self._set_status("error")
+                logger.exception("event=llm_worker_error error=%r", exc)
+                continue
+
+            try:
                 self._set_status("busy")
                 start = time.perf_counter()
                 token_stream = self.llm.stream_generate(text)
@@ -156,7 +186,15 @@ class Pipeline:
     def tts_worker(self):
         while self.running:
             try:
-                response = self.response_q.get()
+                response = self.response_q.get(timeout=0.5)
+            except Empty:
+                continue
+            except Exception as exc:
+                self._set_status("error")
+                logger.exception("event=tts_worker_error error=%r", exc)
+                continue
+
+            try:
                 self._set_status("speaking")
                 start = time.perf_counter()
                 self.tts.speak(response, style=self.response_style)

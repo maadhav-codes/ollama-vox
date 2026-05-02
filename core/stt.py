@@ -1,10 +1,8 @@
-import tempfile
 import time
 import logging
 
 import mlx_whisper
 import numpy as np
-import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +43,12 @@ class STT:
         self.retries = retries
         self.backoff_seconds = backoff_seconds
 
-    def _transcribe_file(self, file_path):
+    def _transcribe_audio(self, audio_data):
         last_error = None
         for attempt in range(self.retries + 1):
             try:
                 result = mlx_whisper.transcribe(
-                    file_path,
+                    audio_data,
                     path_or_hf_repo=self.model,
                 )
                 return result.get("text", "").strip()
@@ -59,10 +57,9 @@ class STT:
                 if attempt < self.retries:
                     time.sleep(self.backoff_seconds * (2**attempt))
         logger.exception(
-            "event=stt_transcribe_failed model=%s retries=%s file=%s",
+            "event=stt_transcribe_failed model=%s retries=%s",
             self.model,
             self.retries,
-            file_path,
             exc_info=last_error,
         )
         return ""
@@ -84,17 +81,13 @@ class STT:
             if len(chunk_audio) == 0:
                 continue
 
-            with tempfile.NamedTemporaryFile(suffix=".wav") as f:
-                sf.write(f.name, chunk_audio, sr)
-                partial = self._transcribe_file(f.name)
+            partial = self._transcribe_audio(chunk_audio)
 
             if partial:
                 live_segments.append(partial)
                 self.printer.live(" ".join(live_segments).strip())
 
-        with tempfile.NamedTemporaryFile(suffix=".wav") as f:
-            sf.write(f.name, audio_1d, sr)
-            final_text = self._transcribe_file(f.name)
+        final_text = self._transcribe_audio(audio_1d)
 
         self.printer.final(final_text)
         return final_text

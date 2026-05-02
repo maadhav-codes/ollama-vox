@@ -5,6 +5,23 @@ import os
 import requests
 from huggingface_hub import snapshot_download
 
+try:
+    import dateutil.parser
+    import phonemizer
+    from phonemizer.backend.espeak.wrapper import EspeakWrapper
+
+    if not hasattr(EspeakWrapper, "set_data_path"):
+
+        def _set_data_path(path):
+            import os
+
+            os.environ["ESPEAK_DATA_PATH"] = str(path)
+
+        EspeakWrapper.set_data_path = _set_data_path
+    import misaki.espeak
+except ImportError:
+    pass
+
 from core.audio import AudioRecorder
 from core.stt import STT
 from core.llm import OllamaClient
@@ -38,8 +55,10 @@ def run_startup_health_checks(config):
         import mlx_audio  # noqa: F401
     except Exception as exc:
         errors.append(f"missing_dependency:{exc}")
+
+    ollama_endpoint = config.get("ollama", {}).get("endpoint", "http://localhost:11434")
     try:
-        r = requests.get("http://localhost:11434/api/tags", timeout=2)
+        r = requests.get(f"{ollama_endpoint}/api/tags", timeout=2)
         r.raise_for_status()
     except Exception as exc:
         errors.append(f"ollama_unreachable:{exc}")
@@ -136,7 +155,11 @@ def main():
     )
 
     stt = STT(config["stt"]["model"])
-    llm = OllamaClient(config["ollama"]["model"], config["ollama"]["temperature"])
+    llm = OllamaClient(
+        endpoint=config["ollama"].get("endpoint", "http://localhost:11434"),
+        model=config["ollama"]["model"],
+        temperature=config["ollama"]["temperature"],
+    )
     tts = TTS(
         voice=config["tts"]["voice"],
         rate=config["tts"]["rate"],
@@ -161,7 +184,7 @@ def main():
     hotkey = config.get("hotkey", {}).get("key", "cmd+shift")
     app = VoiceApp(pipeline, recorder, hotkey=hotkey)
     pipeline.set_status_callback(app.set_status)
-    pipeline._set_metrics_callback(app.set_metrics)
+    pipeline.set_metrics_callback(app.set_metrics)
     app.run()
 
 
