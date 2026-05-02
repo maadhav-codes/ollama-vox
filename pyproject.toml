@@ -3,7 +3,7 @@ name = "native-ollama-voiceover"
 version = "1.0.0"
 description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollama, and Kokoro TTS"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12.0"
 dependencies = [
     "huggingface-hub>=1.12.2",
     "misaki[en]>=0.9.4",
@@ -30,6 +30,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["main"]
+
+[tool.black]
+target-version = ['py312']
 
 [tool.setuptools.packages.find]
 include = ["core*", "ui*"]
