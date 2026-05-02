@@ -13,14 +13,12 @@ try:
     if not hasattr(EspeakWrapper, "set_data_path"):
 
         def _set_data_path(path):
-            import os
-
             os.environ["ESPEAK_DATA_PATH"] = str(path)
 
         EspeakWrapper.set_data_path = _set_data_path
     import misaki.espeak
 except ImportError:
-    pass
+    EspeakWrapper = None
 
 from core.audio import AudioRecorder
 from core.stt import STT
@@ -123,7 +121,6 @@ def run_setup(config):
         snapshot_download(
             repo_id="mlx-community/whisper-small.en-mlx-q4",
             local_dir=stt_path,
-            local_dir_use_symlinks=False,
         )
         logger.info("event=setup_done_stt path=%s", stt_path)
 
@@ -143,7 +140,6 @@ def run_setup(config):
         snapshot_download(
             repo_id="mlx-community/Kokoro-82M-4bit",
             local_dir=tts_path,
-            local_dir_use_symlinks=False,
             allow_patterns=allow_patterns,
         )
         logger.info("event=setup_done_tts path=%s", tts_path)
@@ -166,7 +162,7 @@ def main():
     import sys
     from PySide6.QtWidgets import QApplication
 
-    qt_app = QApplication.instance() or QApplication(sys.argv)
+    _qt_app = QApplication.instance() or QApplication(sys.argv)
 
     if args.setup:
         run_setup(config)

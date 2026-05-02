@@ -38,7 +38,7 @@ STATUS_SUB = {
 
 QSS = """
 QWidget {
-    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-family: -apple-system, "Helvetica", Arial, sans-serif;
     font-size: 13px;
     color: #1c1c1e;
     background: #ffffff;
@@ -225,7 +225,7 @@ class StatusPanel(QWidget):
         try:
             r = requests.get(f"{endpoint}/api/tags", timeout=0.5)
             self._ollama_val.setText("Yes" if r.ok else "No")
-        except Exception:
+        except requests.RequestException:
             self._ollama_val.setText("No")
 
 
@@ -291,7 +291,7 @@ class VoiceTrayApp(QSystemTrayIcon):
         self._pump.timeout.connect(lambda: None)
         self._pump.start()
 
-        signal.signal(signal.SIGINT, lambda *_: QTimer.singleShot(0, self.quit))
+        signal.signal(signal.SIGINT, lambda sig, frame: QTimer.singleShot(0, self.quit))
 
         self._refresh_menu()
 
@@ -303,10 +303,11 @@ class VoiceTrayApp(QSystemTrayIcon):
                 return
         self.setIcon(self._build_icon(status))
 
-    def _build_icon(self, status: str) -> QIcon:
-        SIZE = 44
+    @staticmethod
+    def _build_icon(status: str) -> QIcon:
+        size = 44
 
-        pix = QPixmap(SIZE, SIZE)
+        pix = QPixmap(size, size)
         pix.setDevicePixelRatio(2.0)
         pix.fill(Qt.GlobalColor.transparent)
 
@@ -407,10 +408,10 @@ class VoiceTrayApp(QSystemTrayIcon):
             config_path = Path("config.yaml")
 
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             config = AppConfig.from_dict(data)
-        except Exception:
+        except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError, AttributeError):
             return
 
         wizard = OllamaModelWizard(config)

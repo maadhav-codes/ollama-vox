@@ -1,3 +1,4 @@
+import json
 import requests
 import time
 import logging
@@ -120,7 +121,7 @@ class OllamaClient:
                         if not line:
                             continue
                         try:
-                            data = requests.models.complexjson.loads(line)
+                            data = json.loads(line)
                         except ValueError as e:
                             logger.warning(
                                 "event=ollama_stream_json_error error=%r line=%r",

@@ -44,7 +44,7 @@ class AudioRecorder:
             self._tmp_path, mode="w", samplerate=self.sample_rate, channels=1
         )
 
-        def callback(indata, frames, time, status):
+        def callback(indata, frames):
             if self.recording:
                 self._writer.write(indata)
                 if self.vad_enabled:

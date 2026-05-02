@@ -1,6 +1,7 @@
 import re
 import time
 import logging
+from pathlib import Path
 from threading import Lock
 from typing import Iterable, Optional
 
@@ -32,15 +33,16 @@ class TTS:
         self._interrupt = False
         self._lock = Lock()
 
-    def _load_model_id_from_config(self) -> str:
+    @staticmethod
+    def _load_model_id_from_config() -> str:
         try:
             from core.config import AppConfig
 
-            with open("config.yaml") as f:
+            with open("config.yaml", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             config = AppConfig.from_dict(data)
             return config.tts.model
-        except Exception:
+        except (OSError, yaml.YAMLError, ImportError, AttributeError, KeyError, TypeError, ValueError):
             return "./kokoro/Kokoro-82M-4bit"
 
     def _load_model(self):
@@ -54,7 +56,7 @@ class TTS:
                 "mlx-audio is not installed. Install with: pip install mlx-audio"
             ) from exc
 
-        self._model = load_model(self.model_id)
+        self._model = load_model(Path(self.model_id))
         return self._model
 
     def _split_text(self, text: str) -> Iterable[str]:

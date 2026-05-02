@@ -117,7 +117,7 @@ Notes:
 
 - Bundle includes `config.yaml`, `whisper/`, and `kokoro/`
 - macOS will request microphone permission on first run
-- For unsigned local builds, use right-click -> Open if Gatekeeper warns
+- For unsigned local builds, use right-click → Open if Gatekeeper warns
 
 ## Project Structure
 

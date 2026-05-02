@@ -16,7 +16,7 @@ class _TerminalTranscriptPrinter:
 
             self._console = Console()
             self._use_rich = True
-        except Exception:
+        except ImportError:
             pass
 
     def live(self, text):

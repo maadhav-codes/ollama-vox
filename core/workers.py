@@ -55,8 +55,8 @@ class Pipeline:
         if self.status_callback:
             try:
                 self.status_callback(status)
-            except Exception:
-                logger.exception("event=status_callback_failed status=%s", status)
+            except Exception as exc:
+                logger.exception("event=status_callback_failed status=%s error=%r", status, exc)
 
     def _record_error(self, exc):
         import datetime
@@ -81,8 +81,8 @@ class Pipeline:
         if self.metrics_callback:
             try:
                 self.metrics_callback(dict(self.metrics))
-            except Exception:
-                logger.exception("event=metrics_callback_failed")
+            except Exception as exc:
+                logger.exception("event=metrics_callback_failed error=%r", exc)
 
     def _safe_put(self, q, item, name):
         if not q.full():
@@ -95,7 +95,7 @@ class Pipeline:
             return False
         try:
             q.get_nowait()
-        except Exception:
+        except Empty:
             pass
         q.put(item)
         logger.warning("event=queue_drop queue=%s policy=%s", name, self.drop_policy)
