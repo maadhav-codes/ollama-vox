@@ -36,9 +36,11 @@ class TTS:
     @staticmethod
     def _load_model_id_from_config() -> str:
         try:
-            from core.config import AppConfig
+            from ollama_vox.core.config import AppConfig
+            from pathlib import Path
 
-            with open("config.yaml", encoding="utf-8") as f:
+            config_path = Path(__file__).parent.parent / "config.yaml"
+            with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             config = AppConfig.from_dict(data)
             return config.tts.model

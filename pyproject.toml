@@ -1,9 +1,15 @@
 [project]
-name = "native-ollama-voiceover"
+name = "ollama-vox"
 version = "1.0.0"
 description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollama, and Kokoro TTS"
+authors = [{name = "Mayur Dayal"}]
 readme = "README.md"
 requires-python = ">=3.12.0"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+]
 dependencies = [
     "huggingface-hub>=1.12.2",
     "misaki[en]>=0.9.4",
@@ -19,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-native-ollama-voiceover = "main:main"
+ollama-vox = "ollama_vox.main:main"
 
 [tool.uv]
 package = true
@@ -28,15 +34,14 @@ package = true
 requires = ["setuptools>=81.0.0", "wheel>=0.47.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["main"]
+[tool.setuptools.packages.find]
+include = ["ollama_vox*"]
+
+[tool.setuptools.package-data]
+"ollama_vox" = ["config.yaml"]
 
 [tool.black]
 target-version = ['py312']
-
-[tool.setuptools.packages.find]
-include = ["core*", "ui*"]
-exclude = ["kokoro*", "whisper*", "lib*"]
 
 [dependency-groups]
 dev = [

@@ -20,14 +20,14 @@ try:
 except ImportError:
     EspeakWrapper = None
 
-from core.audio import AudioRecorder
-from core.stt import STT
-from core.llm import OllamaClient
-from core.tts import TTS
-from core.workers import Pipeline
-from ui.tray_app import VoiceTrayApp as VoiceApp
-from core.config import AppConfig, ConfigValidationError
-from ui.model_setup import OllamaModelWizard
+from ollama_vox.core.audio import AudioRecorder
+from ollama_vox.core.stt import STT
+from ollama_vox.core.llm import OllamaClient
+from ollama_vox.core.tts import TTS
+from ollama_vox.core.workers import Pipeline
+from ollama_vox.ui.tray_app import VoiceTrayApp as VoiceApp
+from ollama_vox.core.config import AppConfig, ConfigValidationError
+from ollama_vox.ui.model_setup import OllamaModelWizard
 
 
 def load_config():
@@ -148,7 +148,7 @@ def run_setup(config):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Native Ollama Voiceover")
+    parser = argparse.ArgumentParser(description="Ollama Vox")
     parser.add_argument(
         "--setup",
         action="store_true",

@@ -398,9 +398,9 @@ class VoiceTrayApp(QSystemTrayIcon):
         self.panel.activateWindow()
 
     def change_model(self) -> None:
-        from ui.model_setup import OllamaModelWizard
+        from ollama_vox.ui.model_setup import OllamaModelWizard
+        from ollama_vox.core.config import AppConfig
         import yaml
-        from core.config import AppConfig
 
         base_dir = Path(__file__).parent.parent.resolve()
         config_path = base_dir / "config.yaml"

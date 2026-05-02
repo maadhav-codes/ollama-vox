@@ -1,4 +1,4 @@
-# Native Ollama Voiceover
+# Ollama Vox
 
 A local macOS menubar voice assistant that records speech, transcribes with MLX Whisper, gets responses from Ollama, and speaks back using Kokoro TTS.
 
@@ -31,7 +31,7 @@ uv sync
 Download recommended STT + TTS assets:
 
 ```bash
-uv run native-ollama-voiceover --setup
+uv run ollama-vox --setup
 ```
 
 This setup downloads:
@@ -44,7 +44,7 @@ It uses paths from `config.yaml` (`stt.model`, `tts.model`) and skips downloads 
 ## Run
 
 ```bash
-uv run native-ollama-voiceover
+uv run ollama-vox
 ```
 
 If running directly during development:
