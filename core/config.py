@@ -11,6 +11,14 @@ def _coerce_type(name: str, value: Any, expected_type: type):
         return None
     if not isinstance(value, expected_type):
         try:
+            if expected_type is bool and isinstance(value, str):
+                v_lower = value.lower().strip()
+                if v_lower in ("true", "1", "t", "y", "yes"):
+                    return True
+                elif v_lower in ("false", "0", "f", "n", "no"):
+                    return False
+                else:
+                    raise ValueError(f"Cannot coerce '{value}' to bool")
             return expected_type(value)
         except (ValueError, TypeError):
             raise ConfigValidationError(

@@ -43,6 +43,8 @@ class Pipeline:
             "tts_ms_avg": None,
             "responses_count": 0,
             "last_response": "",
+            "last_error": None,
+            "last_error_time": None,
         }
 
     def set_status_callback(self, callback):
@@ -54,6 +56,14 @@ class Pipeline:
                 self.status_callback(status)
             except Exception:
                 logger.exception("event=status_callback_failed status=%s", status)
+
+    def _record_error(self, exc):
+        import datetime
+
+        self.metrics["last_error"] = type(exc).__name__ + ": " + str(exc)
+        self.metrics["last_error_time"] = datetime.datetime.now().strftime("%H:%M:%S")
+        self._set_status("error")
+        self._publish_metrics()
 
     def set_metrics_callback(self, callback):
         self.metrics_callback = callback
@@ -121,7 +131,7 @@ class Pipeline:
             except Empty:
                 continue
             except Exception as exc:
-                self._set_status("error")
+                self._record_error(exc)
                 logger.exception(
                     "event=stt_worker_error sample_rate=%s error=%r",
                     self.sr,
@@ -143,7 +153,7 @@ class Pipeline:
                 self._publish_metrics()
                 self._set_status("idle")
             except Exception as exc:
-                self._set_status("error")
+                self._record_error(exc)
                 logger.exception(
                     "event=stt_worker_error sample_rate=%s error=%r",
                     self.sr,
@@ -157,7 +167,7 @@ class Pipeline:
             except Empty:
                 continue
             except Exception as exc:
-                self._set_status("error")
+                self._record_error(exc)
                 logger.exception("event=llm_worker_error error=%r", exc)
                 continue
 
@@ -180,7 +190,7 @@ class Pipeline:
                 self._publish_metrics()
                 self._set_status("idle")
             except Exception as exc:
-                self._set_status("error")
+                self._record_error(exc)
                 logger.exception("event=llm_worker_error error=%r", exc)
 
     def tts_worker(self):
@@ -190,7 +200,7 @@ class Pipeline:
             except Empty:
                 continue
             except Exception as exc:
-                self._set_status("error")
+                self._record_error(exc)
                 logger.exception("event=tts_worker_error error=%r", exc)
                 continue
 
@@ -206,5 +216,5 @@ class Pipeline:
                 self._publish_metrics()
                 self._set_status("idle")
             except Exception as exc:
-                self._set_status("error")
+                self._record_error(exc)
                 logger.exception("event=tts_worker_error error=%r", exc)

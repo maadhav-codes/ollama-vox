@@ -129,6 +129,18 @@ class StatusPanel(QWidget):
         for r in (r_model, r_stt, r_lat, r_cnt):
             root.addWidget(r)
 
+        self._error_wrap = QWidget()
+        eh = QVBoxLayout(self._error_wrap)
+        eh.setContentsMargins(16, 0, 16, 10)
+        self._error_val = QLabel("")
+        self._error_val.setStyleSheet(
+            "color: #FF2D55; font-size: 11px; font-weight: 500;"
+        )
+        self._error_val.setWordWrap(True)
+        eh.addWidget(self._error_val)
+        self._error_wrap.hide()
+        root.addWidget(self._error_wrap)
+
         resp_wrap = QWidget()
         resp_wrap.setStyleSheet("border-bottom: 1px solid #f2f2f7;")
         rv = QVBoxLayout(resp_wrap)
@@ -172,7 +184,7 @@ class StatusPanel(QWidget):
 
     def refresh(self, pipeline: Any, metrics: dict[str, Any]) -> None:
         self._llm_val.setText(str(getattr(pipeline.llm, "model", "—")))
-        stt_path = str(getattr(pipeline.stt, "model_path", None) or "—")
+        stt_path = str(getattr(pipeline.stt, "model", None) or "—")
         self._stt_val.setText(stt_path.split("/")[-1])
         last_ms = metrics.get("llm_ms_last")
         self._lat_val.setText("—" if last_ms is None else f"{last_ms:.0f} ms")
@@ -180,6 +192,14 @@ class StatusPanel(QWidget):
         last = (metrics.get("last_response") or "").strip()
         if last:
             self._response.setPlainText(last)
+
+        err = metrics.get("last_error")
+        if err:
+            err_time = metrics.get("last_error_time", "")
+            self._error_val.setText(f"Error ({err_time}): {err}")
+            self._error_wrap.show()
+        else:
+            self._error_wrap.hide()
 
     def keyPressEvent(self, event) -> None:  # type: ignore[override]
         if event.key() == Qt.Key.Key_Escape:
@@ -405,6 +425,9 @@ class VoiceTrayApp(QSystemTrayIcon):
         self._pump.stop()
         if self._hotkey_listener:
             self._hotkey_listener.stop()
+        if self.recording:
+            self.recorder.stop()
+            self.recording = False
         self.pipeline.stop()
         self.hide()
         self.qt_app.quit()
