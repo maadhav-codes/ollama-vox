@@ -23,11 +23,18 @@ class OllamaClient:
         self.retries = retries
         self.backoff_seconds = backoff_seconds
         self.fallback_message = fallback_message
+        self.history_size = 5
+        self.history = []
 
     def generate(self, prompt):
+        self.history.append({"role": "user", "content": prompt})
+
+        if len(self.history) > self.history_size * 2:
+            self.history = self.history[-self.history_size * 2 :]
+
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "messages": self.history,
             "temperature": self.temperature,
             "stream": False,
         }
@@ -36,7 +43,7 @@ class OllamaClient:
         for attempt in range(self.retries + 1):
             try:
                 response = requests.post(
-                    f"{self.endpoint}/api/generate",
+                    f"{self.endpoint}/api/chat",
                     json=payload,
                     timeout=60,
                 )
@@ -50,14 +57,16 @@ class OllamaClient:
                 if not isinstance(data, dict):
                     raise ValueError("Invalid response format: expected JSON object")
 
-                text = data.get("response")
+                message = data.get("message", {})
+                text = message.get("content")
                 if not isinstance(text, str):
                     raise ValueError(
-                        "Invalid response format: missing or non-string 'response' field"
+                        "Invalid response format: missing or non-string 'content' field in 'message'"
                     )
 
                 text = text.strip()
                 if text:
+                    self.history.append({"role": "assistant", "content": text})
                     return text
                 raise RuntimeError("Ollama returned an empty response")
             except Exception as exc:
@@ -81,19 +90,25 @@ class OllamaClient:
         return self.fallback_message
 
     def stream_generate(self, prompt: str) -> Iterable[str]:
+        self.history.append({"role": "user", "content": prompt})
+
+        if len(self.history) > self.history_size * 2:
+            self.history = self.history[-self.history_size * 2 :]
+
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "messages": self.history,
             "temperature": self.temperature,
             "stream": True,
         }
         last_error = None
         emitted_any = False
+        full_response = ""
 
         for attempt in range(self.retries + 1):
             try:
                 with requests.post(
-                    f"{self.endpoint}/api/generate",
+                    f"{self.endpoint}/api/chat",
                     json=payload,
                     timeout=120,
                     stream=True,
@@ -115,10 +130,14 @@ class OllamaClient:
                         if not isinstance(data, dict):
                             continue
 
-                        token = data.get("response")
+                        message = data.get("message", {})
+                        token = message.get("content")
                         if isinstance(token, str) and token:
                             emitted_any = True
+                            full_response += token
                             yield token
+
+                    self.history.append({"role": "assistant", "content": full_response})
                     return
             except Exception as exc:
                 last_error = exc
