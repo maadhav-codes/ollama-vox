@@ -3,8 +3,12 @@ import requests
 from PySide6.QtCore import Qt, QThread, Signal, QEventLoop
 from PySide6.QtWidgets import (
     QMessageBox,
-    QInputDialog,
     QProgressDialog,
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QComboBox,
+    QDialogButtonBox,
 )
 
 
@@ -92,9 +96,9 @@ class OllamaModelWizard:
                     f"Please ensure Ollama is running at {self.endpoint}.\n\nError: {e}"
                 )
                 msg.setStandardButtons(
-                    QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel
+                    QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel  # type: ignore
                 )
-                if msg.exec() == QMessageBox.StandardButton.Cancel:
+                if msg.exec() == QMessageBox.StandardButton.Cancel:  # type: ignore
                     return False
 
         # 2. Check if we have models or if setup is forced
@@ -106,13 +110,17 @@ class OllamaModelWizard:
 
         # 3. If no models, prompt to download default
         if not models:
-            ans = QMessageBox.question(
-                None,
-                "No Models Detected",
-                f"No models found in Ollama.\nWould you like to download the default model ({self.default_model})?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            msg = QMessageBox()
+            msg.setWindowTitle("No Models Detected")
+            msg.setText(
+                f"No models found in Ollama.\nWould you like to download the default model ({self.default_model})?"
             )
-            if ans == QMessageBox.StandardButton.Yes:
+            msg.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No  # type: ignore
+            )
+            ans = msg.exec()
+
+            if ans == QMessageBox.StandardButton.Yes:  # type: ignore
                 success = self.pull_model(self.default_model)
                 if success:
                     self.save_model_selection(self.default_model)
@@ -131,17 +139,25 @@ class OllamaModelWizard:
                 default_index = i
             items.append(display)
 
-        item, ok = QInputDialog.getItem(
-            None,
-            "Select Model",
-            "Choose an Ollama model to use:",
-            items,
-            default_index,
-            False,
-        )
+        dialog = QDialog()
+        dialog.setWindowTitle("Select Model")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Choose an Ollama model to use:"))
 
-        if ok and item:
-            selected_model = item.replace(" (recommended)", "")
+        combo = QComboBox()
+        combo.addItems(items)
+        combo.setCurrentIndex(default_index)
+        layout.addWidget(combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel  # type: ignore
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_model = combo.currentText().replace(" (recommended)", "")
             self.save_model_selection(selected_model)
             return True
 
@@ -182,16 +198,26 @@ class OllamaModelWizard:
         loop.exec()
 
         if progress_dialog.wasCanceled():
-            QMessageBox.warning(None, "Cancelled", "Model download was cancelled.")
+            warn_msg = QMessageBox()
+            warn_msg.setIcon(QMessageBox.Icon.Warning)
+            warn_msg.setWindowTitle("Cancelled")
+            warn_msg.setText("Model download was cancelled.")
+            warn_msg.exec()
             return False
 
         if not success_result[0] and error_msg[0] != "Cancelled":
-            QMessageBox.critical(
-                None, "Error", f"Failed to pull model:\n{error_msg[0]}"
-            )
+            err_msg = QMessageBox()
+            err_msg.setIcon(QMessageBox.Icon.Critical)
+            err_msg.setWindowTitle("Error")
+            err_msg.setText(f"Failed to pull model:\n{error_msg[0]}")
+            err_msg.exec()
             return False
 
-        QMessageBox.information(None, "Success", f"Successfully pulled {model_name}.")
+        info_msg = QMessageBox()
+        info_msg.setIcon(QMessageBox.Icon.Information)
+        info_msg.setWindowTitle("Success")
+        info_msg.setText(f"Successfully pulled {model_name}.")
+        info_msg.exec()
         return True
 
     def save_model_selection(self, model_name: str) -> None:

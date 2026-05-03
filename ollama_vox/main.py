@@ -3,7 +3,6 @@ import yaml
 import logging
 import os
 import requests
-from huggingface_hub import snapshot_download
 
 try:
     import dateutil.parser
@@ -93,60 +92,6 @@ def run_startup_health_checks(config):
         logging.getLogger(__name__).info("event=startup_health_ok")
 
 
-def _ensure_parent(path):
-    parent = os.path.dirname(os.path.abspath(path))
-    os.makedirs(parent, exist_ok=True)
-
-
-def run_setup(config):
-    logger = logging.getLogger(__name__)
-    stt_path = config.stt.model
-    tts_path = config.tts.model
-    voice = config.tts.voice
-
-    logger.info(
-        "event=setup_started stt_path=%s tts_path=%s voice=%s",
-        stt_path,
-        tts_path,
-        voice,
-    )
-
-    if os.path.exists(stt_path):
-        logger.info("event=setup_skip_stt reason=exists path=%s", stt_path)
-    else:
-        _ensure_parent(stt_path)
-        logger.info(
-            "event=setup_download_stt repo=mlx-community/whisper-small.en-mlx-q4"
-        )
-        snapshot_download(
-            repo_id="mlx-community/whisper-small.en-mlx-q4",
-            local_dir=stt_path,
-        )
-        logger.info("event=setup_done_stt path=%s", stt_path)
-
-    if os.path.exists(tts_path):
-        logger.info("event=setup_skip_tts reason=exists path=%s", tts_path)
-    else:
-        _ensure_parent(tts_path)
-        logger.info("event=setup_download_tts repo=mlx-community/Kokoro-82M-4bit")
-        allow_patterns = [
-            "*.json",
-            "*.md",
-            "*.safetensors",
-            "*.pth",
-            f"voices/{voice}.safetensors",
-            f"voices/{voice}.pt",
-        ]
-        snapshot_download(
-            repo_id="mlx-community/Kokoro-82M-4bit",
-            local_dir=tts_path,
-            allow_patterns=allow_patterns,
-        )
-        logger.info("event=setup_done_tts path=%s", tts_path)
-
-    logger.info("event=setup_finished")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Ollama Vox")
     parser.add_argument(
@@ -164,8 +109,11 @@ def main():
 
     _qt_app = QApplication.instance() or QApplication(sys.argv)
 
+    from ollama_vox.ui.setup_wizard import AppSetupWizard
+
     if args.setup:
-        run_setup(config)
+        app_wizard = AppSetupWizard(config)
+        app_wizard.run(force_setup=True)
         wizard = OllamaModelWizard(config)
         wizard.run(force_setup=True)
         return
