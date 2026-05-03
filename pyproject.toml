@@ -1,6 +1,6 @@
 [project]
 name = "ollama-vox"
-version = "1.0.0"
+version = "1.0.1"
 description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollama, and Kokoro TTS"
 authors = [{name = "Mayur Dayal"}]
 readme = "README.md"
@@ -22,12 +22,13 @@ dependencies = [
     "sounddevice>=0.5.5",
     "soundfile>=0.13.1",
     "phonemizer>=3.3.0",
+    "twine>=6.2.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/maadhav-codes/ollama-voiceover"
-Repository = "https://github.com/maadhav-codes/ollama-voiceover.git"
-Issues = "https://github.com/maadhav-codes/ollama-voiceover/issues"
+Homepage = "https://github.com/maadhav-codes/ollama-vox"
+Repository = "https://github.com/maadhav-codes/ollama-vox.git"
+Issues = "https://github.com/maadhav-codes/ollama-vox/issues"
 
 [project.scripts]
 ollama-vox = "ollama_vox.main:main"

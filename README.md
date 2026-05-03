@@ -27,9 +27,10 @@ uv tool install ollama-vox
 ```
 
 If installing from source for development:
+
 ```bash
-git clone https://github.com/maadhav-codes/ollama-voiceover.git
-cd ollama-voiceover
+git clone https://github.com/maadhav-codes/ollama-vox.git
+cd ollama-vox
 uv sync
 ```
 
@@ -59,6 +60,7 @@ uv run ollama-vox
 ## Configuration
 
 Settings are managed in `config.yaml`.
+
 - **`audio`**: Adjust Voice Activity Detection (VAD) and recording limits.
 - **`stt.model`**: Path to the local Whisper model.
 - **`ollama`**: Set the endpoint, model name, and temperature.
