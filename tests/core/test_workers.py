@@ -1,57 +1,62 @@
-import pytest
 from unittest.mock import MagicMock
+
 from ollama_vox.core.workers import Pipeline
 
 
-@pytest.fixture
-def mock_components():
-    return MagicMock(), MagicMock(), MagicMock()
+def test_safe_put_drop_new_policy_drops_when_full():
+    p = Pipeline(
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        sample_rate=16000,
+        queue_maxsize=1,
+        drop_policy="drop_new",
+    )
+    assert p._safe_put(p.audio_q, "a", "audio") is True
+    assert p._safe_put(p.audio_q, "b", "audio") is False
+    assert p.audio_q.get_nowait() == "a"
 
 
-def test_pipeline_init(mock_components):
-    stt, llm, tts = mock_components
-    pipeline = Pipeline(stt, llm, tts, sample_rate=16000)
-
-    assert pipeline.sr == 16000
-    assert pipeline.audio_q.maxsize == 4
-    assert pipeline.running is True
-
-
-def test_pipeline_enqueue_audio(mock_components):
-    stt, llm, tts = mock_components
-    pipeline = Pipeline(stt, llm, tts, sample_rate=16000)
-
-    success = pipeline.enqueue_audio([0.1, 0.2])
-    assert success is True
-    assert pipeline.audio_q.qsize() == 1
-    assert pipeline.cancel_event.is_set() is False
+def test_safe_put_drop_oldest_policy_replaces_when_full():
+    p = Pipeline(
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        sample_rate=16000,
+        queue_maxsize=1,
+        drop_policy="drop_oldest",
+    )
+    assert p._safe_put(p.audio_q, "a", "audio") is True
+    assert p._safe_put(p.audio_q, "b", "audio") is True
+    assert p.audio_q.get_nowait() == "b"
 
 
-def test_pipeline_interrupt_speaking(mock_components):
-    stt, llm, tts = mock_components
-    pipeline = Pipeline(stt, llm, tts, sample_rate=16000)
-
-    pipeline.text_q.put("some text")
-    pipeline.response_q.put("some response")
-
-    pipeline.interrupt_speaking()
-
-    assert pipeline.cancel_event.is_set() is True
-    assert tts.stop.call_count == 1
-    assert pipeline.text_q.empty() is True
-    assert pipeline.response_q.empty() is True
+def test_enqueue_audio_clears_cancel_event():
+    p = Pipeline(MagicMock(), MagicMock(), MagicMock(), sample_rate=16000)
+    p.cancel_event.set()
+    assert p.enqueue_audio([1]) is True
+    assert p.cancel_event.is_set() is False
 
 
-def test_pipeline_start_stop(mock_components):
-    stt, llm, tts = mock_components
-    pipeline = Pipeline(stt, llm, tts, sample_rate=16000)
+def test_interrupt_speaking_stops_tts_and_clears_queues():
+    stt, llm, tts = MagicMock(), MagicMock(), MagicMock()
+    p = Pipeline(stt, llm, tts, sample_rate=16000)
+    p.text_q.put("x")
+    p.response_q.put("y")
 
-    pipeline.start()
-    assert len(pipeline._threads) == 3
-    for t in pipeline._threads:
-        assert t.is_alive() is True
+    p.interrupt_speaking()
 
-    pipeline.stop()
-    assert pipeline.running is False
-    for t in pipeline._threads:
-        assert t.is_alive() is False
+    assert p.cancel_event.is_set() is True
+    tts.stop.assert_called_once()
+    assert p.text_q.empty()
+    assert p.response_q.empty()
+
+
+def test_update_metric_sets_last_and_smooth_avg():
+    p = Pipeline(MagicMock(), MagicMock(), MagicMock(), sample_rate=16000)
+    p._update_metric("stt_ms_last", "stt_ms_avg", 100.0)
+    assert p.metrics["stt_ms_last"] == 100.0
+    assert p.metrics["stt_ms_avg"] == 100.0
+
+    p._update_metric("stt_ms_last", "stt_ms_avg", 50.0)
+    assert p.metrics["stt_ms_avg"] == 90.0

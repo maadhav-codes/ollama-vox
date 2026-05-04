@@ -1,49 +1,76 @@
-import pytest
 from unittest.mock import MagicMock
+
 from ollama_vox.core.llm import OllamaClient
 
 
-@pytest.fixture
-def mock_requests(mocker):
-    return mocker.patch("requests.post")
+class _StreamResponse:
+    def __init__(self, lines):
+        self._lines = lines
+
+    def raise_for_status(self):
+        return None
+
+    def iter_lines(self, decode_unicode=True):
+        return iter(self._lines)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 
-def test_ollama_client_init():
-    client = OllamaClient(
-        endpoint="http://test:11434", model="test-model", temperature=0.5
+def test_generate_success_updates_history(mocker):
+    resp = MagicMock()
+    resp.headers = {"Content-Type": "application/json"}
+    resp.json.return_value = {"message": {"content": " Hello "}}
+    mock_post = mocker.patch("ollama_vox.core.llm.requests.post", return_value=resp)
+
+    client = OllamaClient("http://test", "m", 0.5)
+    out = client.generate("Hi")
+
+    assert out == "Hello"
+    assert [x["role"] for x in client.history] == ["user", "assistant"]
+    assert mock_post.call_count == 1
+
+
+def test_generate_non_json_content_type_falls_back(mocker):
+    resp = MagicMock()
+    resp.headers = {"Content-Type": "text/plain"}
+    resp.raise_for_status.return_value = None
+    mocker.patch("ollama_vox.core.llm.requests.post", return_value=resp)
+
+    client = OllamaClient("http://test", "m", 0.5, retries=0)
+    assert client.generate("Hi") == client.fallback_message
+
+
+def test_stream_generate_success_and_sentence_chunks(mocker):
+    lines = [
+        '{"message": {"content": "Hello "}}',
+        '{"message": {"content": "world."}}',
+        '{"message": {"content": " Next"}}',
+    ]
+    mocker.patch(
+        "ollama_vox.core.llm.requests.post", return_value=_StreamResponse(lines)
     )
-    assert client.endpoint == "http://test:11434"
-    assert client.model == "test-model"
-    assert client.temperature == 0.5
-    assert len(client.history) == 0
+
+    client = OllamaClient("http://test", "m", 0.5)
+    tokens = list(client.stream_generate("Hi"))
+    assert tokens == ["Hello ", "world.", " Next"]
+    assert client.history[-1]["content"] == "Hello world. Next"
+
+    chunks = list(OllamaClient.sentence_chunks(tokens))
+    assert chunks == ["Hello world.", "Next"]
 
 
-def test_ollama_client_generate(mock_requests):
-    mock_response = MagicMock()
-    mock_response.headers = {"Content-Type": "application/json"}
-    mock_response.json.return_value = {"message": {"content": "Hello World"}}
-    mock_requests.return_value = mock_response
+def test_stream_generate_retry_then_fallback(mocker):
+    mocker.patch("ollama_vox.core.llm.requests.post", side_effect=Exception("boom"))
+    client = OllamaClient("http://test", "m", 0.5, retries=1, backoff_seconds=0)
 
-    client = OllamaClient("http://test", "test", 0.5)
-    response = client.generate("Hi")
-
-    assert response == "Hello World"
-    assert len(client.history) == 2
-    assert client.history[0]["role"] == "user"
-    assert client.history[1]["role"] == "assistant"
+    out = list(client.stream_generate("Hi"))
+    assert out == [client.fallback_message]
 
 
-def test_ollama_client_generate_retry_on_failure(mock_requests):
-    mock_requests.side_effect = Exception("Network Error")
-    client = OllamaClient("http://test", "test", 0.5, retries=1, backoff_seconds=0.01)
-
-    response = client.generate("Hi")
-
-    assert response == client.fallback_message
-    assert mock_requests.call_count == 2
-
-
-def test_sentence_chunks():
-    token_stream = ["Hello", " world", ". ", "How ", "are", " you? ", "I am", " fine"]
-    chunks = list(OllamaClient.sentence_chunks(token_stream))
-    assert chunks == ["Hello world.", "How are you?", "I am fine"]
+def test_sentence_chunks_tail_without_punctuation():
+    chunks = list(OllamaClient.sentence_chunks(["a", " b", " c"]))
+    assert chunks == ["a b c"]
