@@ -65,3 +65,12 @@ Settings are managed in `config.yaml`.
 - **`stt.model`**: Path to the local Whisper model.
 - **`ollama`**: Set the endpoint, model name, and temperature.
 - **`tts`**: Configure the voice, speaking rate, and Kokoro model path.
+
+## Community
+
+We welcome contributions and feedback from the community!
+
+- **Contributing**: Please see our [Contributing Guide](CONTRIBUTING.md) for local setup instructions and our PR review workflow.
+- **Reporting Issues**: Encountered a bug or have a feature idea? Please use our [Issue Forms](https://github.com/maadhav-codes/ollama-vox/issues/new/choose).
+- **Discussions**: Have questions or want to share how you're using Ollama Vox? Join the conversation in [GitHub Discussions](https://github.com/maadhav-codes/ollama-vox/discussions).
+- **Security**: If you find a security vulnerability, please follow the steps in our [Security Policy](SECURITY.md) to report it privately.

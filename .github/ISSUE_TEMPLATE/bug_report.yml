@@ -1,0 +1,77 @@
+name: Bug Report
+description: Create a report to help us improve Ollama Vox
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please ensure you are running the **latest version** of Ollama Vox before submitting.
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: To Reproduce
+      description: Steps to reproduce the behavior. Please include exact prompt/input used.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: e.g. macOS 14.2, Windows 11, Ubuntu 22.04
+    validations:
+      required: true
+  - type: input
+    id: ollama-version
+    attributes:
+      label: Ollama Version
+      description: e.g. 0.1.20
+    validations:
+      required: true
+  - type: input
+    id: ollama-vox-version
+    attributes:
+      label: Ollama Vox Version
+      description: e.g. 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model Used
+      description: e.g. llama3, mistral, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Please provide any relevant logs or error output.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context or screenshots
+      description: Add any other context about the problem here, and attach screenshots if applicable.
+    validations:
+      required: false
