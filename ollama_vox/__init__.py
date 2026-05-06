@@ -16,4 +16,4 @@ The application entry-point lives in ``ollama_vox.main`` and is registered as th
 # The canonical version of the package.
 # This single string is the source-of-truth; ``pyproject.toml`` reads it via
 # ``importlib.metadata`` so both always stay in sync.
-__version__ = "1.0.2"
+__version__ = "1.0.3"

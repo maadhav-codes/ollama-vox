@@ -1,6 +1,6 @@
 [project]
 name = "ollama-vox"
-version = "1.0.2"
+version = "1.0.3"
 description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollama, and Kokoro TTS"
 authors = [{name = "Mayur Dayal"}]
 readme = "README.md"
