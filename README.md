@@ -9,6 +9,7 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 - **Local text generation** with Ollama
 - **Local text-to-speech** with `mlx-audio` + Kokoro voices
 - **Status panel** showing model info, rolling latency stats, and response history
+- **Developer-Friendly Codebase**: Comprehensive Google-style docstrings, full type hints, and robust pytest suite
 
 ## Requirements
 
@@ -31,7 +32,7 @@ If installing from source for development:
 ```bash
 git clone https://github.com/maadhav-codes/ollama-vox.git
 cd ollama-vox
-uv sync
+uv sync --group dev
 ```
 
 ## First-Time Setup
@@ -56,6 +57,16 @@ uv run ollama-vox
 2. Select **Start Listening** to speak.
 3. Select **Stop Listening** when you are done. The app will process your speech and respond with audio.
 4. Click **Show Status** to view latency, recent responses, and active models.
+
+## Development & Testing
+
+Ollama Vox is built with a strong emphasis on reliability and developer experience. The core pipeline is fully unit-tested with mocked hardware dependencies, and the entire codebase features comprehensive Google-style docstrings and Python type hints.
+
+To run the test suite locally:
+
+```bash
+uv run pytest
+```
 
 ## Configuration
 
