@@ -88,6 +88,18 @@ Settings are managed in `config.yaml`.
 - **`ollama`**: Set the endpoint, model name, and temperature.
 - **`tts`**: Configure the voice, speaking rate, and Kokoro model path.
 
+On first download, a folder picker lets you choose where to keep models
+(including a folder on Desktop). Skipping the picker uses
+`~/Documents/ollama-vox/models`. The app remembers your choice across launches.
+Relative STT and TTS paths resolve inside that folder regardless of the launch
+directory. Absolute paths and paths starting with `~` in config remain supported.
+
+Before offering a download, setup checks existing model files in configured
+and remembered locations, the project directory, common Documents/Desktop/
+Downloads folders, and the Hugging Face cache. Complete models are reused in
+place and their locations remembered. A selected folder is checked again before
+any download prompt. Only missing or incomplete models are downloaded.
+
 ## Community
 
 We welcome contributions and feedback from the community!

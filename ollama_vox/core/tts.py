@@ -43,6 +43,8 @@ import numpy as np
 import sounddevice as sd
 import yaml
 
+from ollama_vox.core.config import AppConfig, ConfigValidationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -119,19 +121,14 @@ class TTS:
         model path.
 
         Returns:
-            str: The ``tts.model`` value from ``config.yaml``, or the
-                 hard-coded default ``"./kokoro/Kokoro-82M-4bit"`` if the
-                 file cannot be read or parsed for any reason.
+            str: The resolved absolute ``tts.model`` path, or the resolved
+                 default Kokoro path if the file cannot be read or parsed.
 
         Note:
             Failures are silently swallowed so that the TTS object can still
             be constructed even if the config file is missing or corrupted.
         """
         try:
-            from pathlib import Path
-
-            from ollama_vox.core.config import AppConfig
-
             # The config file lives two directories up from this file:
             # ollama_vox/core/tts.py → ollama_vox/ → config.yaml
             config_path = Path(__file__).parent.parent / "config.yaml"
@@ -146,10 +143,11 @@ class TTS:
             AttributeError,  # Missing attribute in config object
             KeyError,  # Missing key in YAML dict
             TypeError,  # Unexpected type in config data
-            ValueError,  # Validation error from AppConfig
+            ValueError,
+            ConfigValidationError,  # Invalid application configuration
         ):
             # Fall back to the well-known default path.
-            return "./kokoro/Kokoro-82M-4bit"
+            return AppConfig.from_dict({}).tts.model
 
     def _load_model(self):
         """Load the Kokoro model from disk on first use (lazy loading).

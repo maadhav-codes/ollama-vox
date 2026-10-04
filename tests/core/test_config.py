@@ -9,7 +9,7 @@ Tests verify that :class:`AppConfig` (and its sub-configs) correctly:
 
 import pytest
 
-from ollama_vox.core.config import AppConfig, ConfigValidationError
+from ollama_vox.core.config import AppConfig, ConfigValidationError, resolve_model_path
 
 
 def test_app_config_defaults():
@@ -22,9 +22,13 @@ def test_app_config_defaults():
     config = AppConfig.from_dict({})
     assert config.audio.sample_rate == 16000
     assert config.audio.vad_enabled is True
-    assert config.stt.model == "./whisper/whisper-small.en-mlx-q4"
+    assert config.stt.model == resolve_model_path(
+        "./whisper/whisper-small.en-mlx-q4", "stt.model"
+    )
     assert config.ollama.endpoint == "http://localhost:11434"
-    assert config.tts.model == "./kokoro/Kokoro-82M-4bit"
+    assert config.tts.model == resolve_model_path(
+        "./kokoro/Kokoro-82M-4bit", "tts.model"
+    )
     assert config.queue.maxsize == 4
     assert config.queue.drop_policy == "drop_oldest"
 

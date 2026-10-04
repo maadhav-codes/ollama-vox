@@ -20,8 +20,84 @@ Typical usage example:
     16000
 """
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+from platformdirs import user_config_path, user_documents_path
+
+
+DEFAULT_STT_MODEL = "./whisper/whisper-small.en-mlx-q4"
+DEFAULT_TTS_MODEL = "./kokoro/Kokoro-82M-4bit"
+
+
+def model_location_file() -> Path:
+    return user_config_path("ollama-vox", appauthor=False) / "model-location.json"
+
+
+def _model_preferences() -> dict:
+    try:
+        data = json.loads(model_location_file().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_model_preferences(data: dict) -> None:
+    destination = model_location_file()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(".tmp")
+    temporary.write_text(json.dumps(data), encoding="utf-8")
+    temporary.replace(destination)
+
+
+def save_model_paths(config) -> None:
+    """Remember independently located models while keeping the folder choice."""
+    data = _model_preferences()
+    data["model_paths"] = {
+        name: {"original": section.original_model, "path": section.model}
+        for name, section in (("stt", config.stt), ("tts", config.tts))
+    }
+    _save_model_preferences(data)
+
+
+def saved_model_data_dir() -> Path | None:
+    """Read the user's previously selected absolute model directory."""
+    try:
+        data = _model_preferences()
+        path = Path(data["model_directory"]).expanduser()
+        return path if path.is_absolute() else None
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
+def model_data_dir() -> Path:
+    """Use the chosen model directory, defaulting to a folder in Documents."""
+    return saved_model_data_dir() or user_documents_path() / "ollama-vox" / "models"
+
+
+def save_model_data_dir(directory: Path) -> None:
+    """Persist the location independently of launch directory or package files."""
+    data = _model_preferences()
+    data["model_directory"] = str(directory.expanduser().resolve())
+    _save_model_preferences(data)
+
+
+def resolve_model_path(value: str, name: str) -> str:
+    """Expand home paths and resolve relative paths beneath the chosen folder."""
+    if not value or not value.strip():
+        raise ConfigValidationError(f"{name} must be a non-empty model path")
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return str(path.resolve())
+    try:
+        saved = _model_preferences()["model_paths"][name.split(".")[0]]
+        if Path(saved["original"]) == path and Path(saved["path"]).is_absolute():
+            return str(Path(saved["path"]).resolve())
+    except (KeyError, TypeError, ValueError):
+        pass
+    return str((model_data_dir() / path).resolve())
 
 
 class ConfigValidationError(Exception):
@@ -195,6 +271,8 @@ class STTConfig:
 
     Attributes:
         model (str): File-system path to the Whisper model directory.
+            Relative paths resolve under the per-user model data directory;
+            absolute paths and ``~`` paths are supported.
             This should point to a directory containing the MLX-quantised
             model files (e.g. ``weights.npz``, ``config.json``).
             Default: ``"./whisper/whisper-small.en-mlx-q4"`` — a small,
@@ -206,7 +284,8 @@ class STTConfig:
           model: ./whisper/whisper-small.en-mlx-q4
     """
 
-    model: str = "./whisper/whisper-small.en-mlx-q4"
+    model: str = DEFAULT_STT_MODEL
+    original_model: str = field(init=False, repr=False)
 
     def __post_init__(self):
         """Coerce the model path to a string.
@@ -215,6 +294,8 @@ class STTConfig:
             ConfigValidationError: If the value cannot be converted to str.
         """
         self.model = _coerce_type("stt.model", self.model, str)
+        self.original_model = self.model
+        self.model = resolve_model_path(self.model, "stt.model")
 
 
 @dataclass
@@ -273,6 +354,8 @@ class TTSConfig:
 
     Attributes:
         model (str): File-system path to the Kokoro model directory.
+            Relative paths resolve under the per-user model data directory;
+            absolute paths and ``~`` paths are supported.
             Should contain the MLX model weights (``*.safetensors``) and
             config files. Default: ``"./kokoro/Kokoro-82M-4bit"``.
         voice (str): Voice identifier used for synthesis. The voice name
@@ -302,7 +385,8 @@ class TTSConfig:
           split_chars: 180
     """
 
-    model: str = "./kokoro/Kokoro-82M-4bit"
+    model: str = DEFAULT_TTS_MODEL
+    original_model: str = field(init=False, repr=False)
     voice: str = "af_bella"
     rate: float = 1.0
     sample_rate: int = 24000
@@ -315,6 +399,8 @@ class TTSConfig:
             ConfigValidationError: If any field value cannot be converted.
         """
         self.model = _coerce_type("tts.model", self.model, str)
+        self.original_model = self.model
+        self.model = resolve_model_path(self.model, "tts.model")
         self.voice = _coerce_type("tts.voice", self.voice, str)
         self.rate = _coerce_type("tts.rate", self.rate, float)
         self.sample_rate = _coerce_type("tts.sample_rate", self.sample_rate, int)

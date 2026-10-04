@@ -5,6 +5,8 @@ audio:
   vad_silence_seconds: 1.2
   max_duration_seconds: 20
 
+# Relative model paths use the folder selected during setup, or
+# ~/Documents/ollama-vox/models. Absolute paths and ~ are supported.
 stt:
   model: ./whisper/whisper-small.en-mlx-q4
 

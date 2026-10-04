@@ -109,6 +109,12 @@ def test_existing_models_skip_downloads_and_dialogs(tmp_path, mocker):
     tts = tmp_path / "kokoro"
     stt.mkdir()
     tts.mkdir()
+    (stt / "config.json").write_text("{}")
+    (stt / "weights.npz").write_bytes(b"weights")
+    (tts / "config.json").write_text("{}")
+    (tts / "model.safetensors").write_bytes(b"weights")
+    (tts / "voices").mkdir()
+    (tts / "voices/af_bella.pt").write_bytes(b"voice")
     config = AppConfig.from_dict(
         {"stt": {"model": str(stt)}, "tts": {"model": str(tts)}}
     )

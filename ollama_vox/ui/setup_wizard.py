@@ -28,10 +28,19 @@ Dependencies:
 
 import os
 import sys
+from pathlib import Path
 
 from huggingface_hub import snapshot_download
 from PySide6.QtCore import QEventLoop, Qt, QThread, Signal
-from PySide6.QtWidgets import QMessageBox, QProgressDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
+
+from ollama_vox.core.config import (
+    model_data_dir,
+    save_model_data_dir,
+    save_model_paths,
+    saved_model_data_dir,
+)
+from ollama_vox.core.model_assets import discover_model_paths, model_files_available
 
 
 class SetupDownloadThread(QThread):
@@ -108,7 +117,7 @@ class SetupDownloadThread(QThread):
             voice = self.config.tts.voice
 
             # --- Download Whisper STT model if missing ---
-            if not os.path.exists(stt_path):
+            if not model_files_available(stt_path, "stt", voice):
                 self._ensure_parent(stt_path)
                 self.progress.emit("Downloading STT model (Whisper)...", 0)
                 snapshot_download(
@@ -117,7 +126,7 @@ class SetupDownloadThread(QThread):
                 )
 
             # --- Download Kokoro TTS model if missing ---
-            if not os.path.exists(tts_path):
+            if not model_files_available(tts_path, "tts", voice):
                 self._ensure_parent(tts_path)
                 self.progress.emit("Downloading TTS model (Kokoro)...", 0)
 
@@ -137,7 +146,12 @@ class SetupDownloadThread(QThread):
                     allow_patterns=allow_patterns,
                 )
 
-            # Both models are present — signal success.
+            if not model_files_available(
+                stt_path, "stt", voice
+            ) or not model_files_available(tts_path, "tts", voice):
+                raise RuntimeError(
+                    "Downloaded model files are incomplete. Please retry setup."
+                )
             self.finished_pull.emit(True, "")
         except Exception as e:
             # Signal failure with the exception message for display in the UI.
@@ -167,6 +181,42 @@ class AppSetupWizard:
     def __init__(self, config):
         self.config = config
 
+    def choose_model_directory(self) -> None:
+        """Choose and remember the base folder for relative model paths."""
+        relative_sections = [
+            section
+            for kind, section in (("stt", self.config.stt), ("tts", self.config.tts))
+            if not Path(section.original_model).expanduser().is_absolute()
+            and not model_files_available(section.model, kind, self.config.tts.voice)
+        ]
+        if not relative_sections or saved_model_data_dir() is not None:
+            return
+        default = model_data_dir()
+        selected = QFileDialog.getExistingDirectory(
+            None,
+            "Choose Model Folder (Cancel uses Documents/ollama-vox/models)",
+            str(default.parent if default.parent.exists() else default.parents[1]),
+        )
+        directory = Path(selected).expanduser().resolve() if selected else default
+        try:
+            save_model_data_dir(directory)
+        except OSError as exc:
+            QMessageBox.critical(None, "Could Not Save Model Folder", str(exc))
+            sys.exit(1)
+        for section in relative_sections:
+            section.model = str((directory / section.original_model).resolve())
+        try:
+            discover_model_paths(self.config, extra_roots=(directory,))
+            save_model_paths(self.config)
+        except OSError as exc:
+            QMessageBox.critical(None, "Could Not Save Model Location", str(exc))
+            sys.exit(1)
+
+    def models_ready(self) -> bool:
+        return model_files_available(
+            self.config.stt.model, "stt", self.config.tts.voice
+        ) and model_files_available(self.config.tts.model, "tts", self.config.tts.voice)
+
     def run(self, force_setup: bool = False) -> bool:
         """Check for models and download them if needed.
 
@@ -193,11 +243,12 @@ class AppSetupWizard:
                   downloaded successfully). Never returns ``False`` — the
                   method either returns ``True`` or calls ``sys.exit(1)``.
         """
-        stt_path = self.config.stt.model
-        tts_path = self.config.tts.model
-
-        # Check whether both model directories already exist on disk.
-        needs_download = not os.path.exists(stt_path) or not os.path.exists(tts_path)
+        try:
+            discover_model_paths(self.config)
+        except OSError as exc:
+            QMessageBox.critical(None, "Could Not Save Model Location", str(exc))
+            sys.exit(1)
+        needs_download = not self.models_ready()
 
         if not needs_download:
             if force_setup:
@@ -211,18 +262,23 @@ class AppSetupWizard:
                 info_msg.exec()
             return True
 
+        self.choose_model_directory()
+        if self.models_ready():
+            return True
+
         # --- At least one model is missing — ask the user ---
         msg = QMessageBox()
         msg.setWindowTitle("Download Required Models")
         msg.setText(
-            "Ollama Vox needs to download required STT (Whisper) and TTS (Kokoro) models. Download now?"
+            "Ollama Vox needs to download required STT (Whisper) and TTS (Kokoro) models. "
+            f"Download the missing files now?\n\nSTT: {self.config.stt.model}\nTTS: {self.config.tts.model}"
         )
         msg.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No  # type: ignore
         )
         ans = msg.exec()
 
-        if ans == QMessageBox.StandardButton.No:
+        if ans != QMessageBox.StandardButton.Yes:
             # Without models the app cannot function — inform and exit.
             err_msg = QMessageBox()
             err_msg.setIcon(QMessageBox.Icon.Critical)
@@ -273,6 +329,8 @@ class AppSetupWizard:
         thread.start()
         # Block here until on_finished() calls loop.quit().
         loop.exec()
+        thread.wait()
+        progress_dialog.close()
 
         if not success_result[0]:
             # Download failed — show error and exit (models are required).
