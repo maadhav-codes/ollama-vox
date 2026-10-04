@@ -14,7 +14,7 @@ A local macOS menubar voice assistant that records speech, transcribes with MLX 
 ## Requirements
 
 - macOS (Apple Silicon recommended)
-- Python `3.12+`
+- Python `3.12.10+`
 - [Ollama](https://ollama.com/) installed and running locally
 
 ## Installation

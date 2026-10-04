@@ -4,7 +4,10 @@ version = "1.0.3"
 description = "Local macOS menubar voice assistant powered by MLX Whisper, Ollama, and Kokoro TTS"
 authors = [{name = "Mayur Dayal"}]
 readme = "README.md"
-requires-python = ">=3.12.0"
+# Python 3.12.0–3.12.9 expose a CPython importlib incompatibility with
+# ``six.moves`` (``_SixMetaPathImporter`` has no ``_path``).  Require the
+# first patched 3.12 release so fresh installs cannot select those versions.
+requires-python = ">=3.12.10"
 license = { file = "LICENSE" }
 classifiers = [
     "Programming Language :: Python :: 3",
