@@ -32,6 +32,14 @@ Dependencies:
 """
 
 import json
+import os
+import shlex
+import shutil
+import signal
+import subprocess
+import time
+from urllib.parse import urlparse
+from pathlib import Path
 
 import requests
 from PySide6.QtCore import QEventLoop, Qt, QThread, Signal
@@ -44,6 +52,155 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QVBoxLayout,
 )
+
+
+# Keep ownership across startup and runtime model wizards.
+_started_servers: list[tuple[str, subprocess.Popen]] = []
+
+
+def running_started_servers() -> list[tuple[str, subprocess.Popen]]:
+    """Return live servers launched by this app, pruning exited processes."""
+    _started_servers[:] = [
+        (endpoint, process)
+        for endpoint, process in _started_servers
+        if process.poll() is None
+    ]
+    return list(_started_servers)
+
+
+def is_local_endpoint(endpoint: str) -> bool:
+    parsed = urlparse(endpoint.rstrip("/"))
+    return (
+        parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        and not parsed.path
+        and not parsed.query
+        and not parsed.fragment
+        and parsed.username is None
+        and parsed.password is None
+    )
+
+
+def _process_identity(pid: int) -> str | None:
+    """Read command and start time together to detect exited or reused PIDs."""
+    result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "lstart=", "-o", "command="],
+        capture_output=True,
+        text=True,
+        timeout=2,
+    )
+    if result.returncode == 1 and not result.stdout.strip():
+        return None
+    if result.returncode != 0:
+        raise OSError(result.stderr.strip() or "Could not inspect the Ollama process.")
+    return result.stdout.strip() or None
+
+
+def _local_listener_pids(port: int) -> set[int]:
+    result = subprocess.run(
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+        capture_output=True,
+        text=True,
+        timeout=2,
+    )
+    if (
+        result.returncode == 1
+        and not result.stdout.strip()
+        and not result.stderr.strip()
+    ):
+        return set()  # No server is listening anymore.
+    if result.returncode != 0:
+        raise OSError(
+            result.stderr.strip() or "Could not find the local Ollama server."
+        )
+    return {int(line) for line in result.stdout.split()}
+
+
+def _stop_existing_local_server(endpoint: str) -> None:
+    """Stop verified ``ollama serve`` listeners at the configured local port."""
+    if not is_local_endpoint(endpoint):
+        raise OSError("Only local Ollama servers can be stopped by Ollama Vox.")
+    port = urlparse(endpoint).port or 11434
+    for pid in _local_listener_pids(port):
+        identity = _process_identity(pid)
+        if identity is None:
+            continue
+        # lstart has five fields (weekday, month, day, time, year).
+        fields = identity.split(maxsplit=5)
+        command = shlex.split(fields[5]) if len(fields) == 6 else []
+        if (
+            len(command) < 2
+            or Path(command[0]).name != "ollama"
+            or command[1] != "serve"
+        ):
+            raise OSError(
+                f"The listener on port {port} is not a verified 'ollama serve' process."
+            )
+        for stop_signal in (signal.SIGTERM, signal.SIGKILL):
+            if _process_identity(pid) != identity:
+                break
+            try:
+                os.kill(pid, stop_signal)
+            except ProcessLookupError:
+                break
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if _process_identity(pid) != identity:
+                    break
+                time.sleep(0.1)
+            else:
+                continue
+            break
+        else:
+            raise OSError(f"Ollama on port {port} did not stop.")
+    if _local_listener_pids(port):
+        raise OSError(
+            "A server is still listening on the Ollama port. "
+            "If Ollama is managed by a desktop app or service, stop it there, "
+            "then retry, or choose No to leave it running."
+        )
+
+
+def _stop_server_process(process: subprocess.Popen) -> None:
+    """Terminate an owned server, escalating to kill after a bounded wait."""
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return  # The process exited between poll() and terminate().
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+
+
+class OllamaStopThread(QThread):
+    """Stop local servers without blocking the Qt GUI thread."""
+
+    finished_stop = Signal(bool, str)
+
+    def __init__(self, servers: list[tuple[str, subprocess.Popen]], endpoint: str = ""):
+        super().__init__()
+        self.servers = servers
+        self.endpoint = endpoint
+
+    def run(self) -> None:
+        errors = []
+        for endpoint, process in self.servers:
+            try:
+                _stop_server_process(process)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                errors.append(f"{endpoint}: {exc}")
+        if self.endpoint and self.endpoint not in {
+            endpoint for endpoint, _ in self.servers
+        }:
+            try:
+                _stop_existing_local_server(self.endpoint)
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                errors.append(f"{self.endpoint}: {exc}")
+        self.finished_stop.emit(not errors, "\n".join(errors))
 
 
 def update_config_model(config_path: str, new_model: str) -> None:
@@ -196,13 +353,77 @@ class OllamaPullThread(QThread):
             self.finished_pull.emit(False, str(e))
 
 
+class OllamaStartThread(QThread):
+    """Start a local Ollama server and wait at most 15 seconds for its API.
+
+    A successfully started server is tracked so the user can stop it on quit.
+    Only the process created here is stopped if startup fails.
+    """
+
+    finished_start = Signal(bool, str)
+
+    def __init__(self, endpoint: str):
+        super().__init__()
+        self.endpoint = endpoint
+
+    def run(self) -> None:
+        process = None
+        try:
+            executable = shutil.which("ollama")
+            if not executable:
+                raise RuntimeError(
+                    "Ollama is not installed or is not on PATH. "
+                    "Install it from https://ollama.com/download, then try again."
+                )
+            env = os.environ.copy()
+            # Respect the configured local port rather than an inherited host.
+            env["OLLAMA_HOST"] = self.endpoint
+            process = subprocess.Popen(
+                [executable, "serve"],
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 15
+            while (remaining := deadline - time.monotonic()) > 0:
+                try:
+                    response = requests.get(
+                        f"{self.endpoint}/api/tags", timeout=min(1, remaining)
+                    )
+                    response.raise_for_status()
+                    response.json()
+                    if process.poll() is None:
+                        _started_servers.append((self.endpoint, process))
+                    self.finished_start.emit(True, "")
+                    return
+                except (requests.RequestException, ValueError):
+                    pass
+                if process.poll() is not None:
+                    raise RuntimeError(
+                        f"ollama serve exited with code {process.returncode}. "
+                        "Run 'ollama serve' in a terminal to see its error output."
+                    )
+                self.msleep(250)
+            raise RuntimeError("Ollama did not become ready within 15 seconds.")
+        except Exception as exc:
+            error = str(exc)
+            try:
+                if process is not None:
+                    _stop_server_process(process)
+            except (OSError, subprocess.TimeoutExpired) as cleanup_error:
+                error += f"\nCould not stop the failed server: {cleanup_error}"
+            self.finished_start.emit(False, error)
+
+
 class OllamaModelWizard:
     """Interactive wizard for selecting or downloading an Ollama LLM model.
 
     This wizard guides the user through choosing which model Ollama Vox will
     use for conversation. It handles four scenarios:
 
-    1. Ollama is not running → show a Retry/Cancel dialog in a loop.
+    1. Local Ollama is not running → ask permission to start ``ollama serve``.
     2. No models are installed → offer to download the default model.
     3. Models are installed → show a combo-box selection dialog.
     4. ``force_setup=True`` → always show the selection/download dialog.
@@ -241,30 +462,17 @@ class OllamaModelWizard:
             bool: ``True`` if a model was successfully selected (and the app
                   can proceed). ``False`` if the user cancelled.
         """
-        # --- Step 1: Verify Ollama is running ---
-        # Loop until the server responds or the user clicks Cancel.
-        while True:
+        # --- Step 1: Verify Ollama is running, offering local startup once ---
+        try:
             try:
-                r = requests.get(f"{self.endpoint}/api/tags", timeout=2)
-                r.raise_for_status()
-                data = r.json()
-                # Extract model names from the response.
-                # Response format: {"models": [{"name": "llama3.2:1b", ...}, ...]}
-                models = [m["name"] for m in data.get("models", [])]
-                break  # Server responded — proceed to model selection
-            except Exception as e:
-                msg = QMessageBox()
-                msg.setIcon(QMessageBox.Icon.Critical)
-                msg.setText("Ollama is not reachable.")
-                msg.setInformativeText(
-                    f"Please ensure Ollama is running at {self.endpoint}.\n\nError: {e}"
-                )
-                msg.setStandardButtons(
-                    QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel  # type: ignore
-                )
-                if msg.exec() == QMessageBox.StandardButton.Cancel:  # type: ignore
+                models = self._available_models()
+            except (requests.ConnectionError, requests.Timeout):
+                if not self.start_local_server():
                     return False
-                # User clicked Retry — loop back and try again.
+                models = self._available_models()
+        except Exception as exc:
+            self._show_connection_error(str(exc))
+            return False
 
         # --- Step 2: Determine if model selection is needed ---
         current_model = self.config.ollama.model
@@ -335,6 +543,66 @@ class OllamaModelWizard:
 
         # User clicked Cancel.
         return False
+
+    def _available_models(self) -> list[str]:
+        response = requests.get(f"{self.endpoint}/api/tags", timeout=2)
+        response.raise_for_status()
+        return [model["name"] for model in response.json().get("models", [])]
+
+    def _show_connection_error(self, error: str) -> None:
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle("Ollama Unavailable")
+        msg.setText(f"Could not connect to Ollama at {self.endpoint}.")
+        msg.setInformativeText(error)
+        msg.exec()
+
+    def start_local_server(self) -> bool:
+        """Ask before starting a local server; never launch for a remote URL."""
+        if not is_local_endpoint(self.endpoint):
+            self._show_connection_error(
+                "Start Ollama on the configured host and try again. "
+                "Ollama Vox can only start a local HTTP server."
+            )
+            return False
+
+        msg = QMessageBox()
+        msg.setWindowTitle("Start Ollama?")
+        msg.setText(f"Ollama is not running at {self.endpoint}. Start it now?")
+        msg.setInformativeText(
+            "This runs 'ollama serve' in the background. "
+            "When you quit Ollama Vox, you can stop the server or leave it running."
+        )
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        if msg.exec() != QMessageBox.StandardButton.Yes:
+            return False
+
+        progress = QProgressDialog("Starting Ollama...", "", 0, 0, None)
+        progress.setWindowTitle("Starting Ollama")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+
+        thread = OllamaStartThread(self.endpoint)
+        loop = QEventLoop()
+        result = [False, ""]
+
+        def on_finished(success: bool, error: str) -> None:
+            result[:] = [success, error]
+            loop.quit()
+
+        thread.finished_start.connect(on_finished)
+        thread.start()
+        loop.exec()
+        # Keep the QThread alive until run() has returned after emitting.
+        thread.wait()
+        progress.close()
+        if not result[0]:
+            self._show_connection_error(result[1])
+        return result[0]
 
     def pull_model(self, model_name: str) -> bool:
         """Download an Ollama model with a cancellable progress dialog.

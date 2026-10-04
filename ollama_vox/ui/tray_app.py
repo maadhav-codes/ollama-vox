@@ -33,18 +33,26 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, QEventLoop, QPointF, QRectF, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QMenu,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QProgressDialog,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
+)
+
+from ollama_vox.ui.model_setup import (
+    OllamaStopThread,
+    is_local_endpoint,
+    running_started_servers,
 )
 
 # Maps each pipeline status to a distinctive colour used in the UI dot badge
@@ -384,6 +392,10 @@ class VoiceTrayApp(QSystemTrayIcon):
         self.pipeline = pipeline
         self.recorder = recorder
         self.recording = False  # True while the microphone is actively recording
+        self._quitting = False
+        self._shutdown_complete = False
+        # Route native/application Quit requests through the same confirmation.
+        self.qt_app.installEventFilter(self)
 
         self.status = "idle"
         self.metrics: dict[str, Any] = {}
@@ -664,23 +676,99 @@ class VoiceTrayApp(QSystemTrayIcon):
             self.pipeline.llm.history = []
             self.panel.refresh(self.pipeline, self.metrics)
 
+    def eventFilter(self, watched: Any, event: QEvent) -> bool:
+        if (
+            watched is self.qt_app
+            and event.type() == QEvent.Type.Quit
+            and not self._shutdown_complete
+        ):
+            if not self._quitting:
+                QTimer.singleShot(0, self.quit)
+            return True
+        return super().eventFilter(watched, event)
+
+    def _confirm_server_shutdown(self) -> bool:
+        """Offer to stop local Ollama before completing quit, across sessions."""
+        servers = running_started_servers()
+        endpoint = self.pipeline.llm.endpoint.rstrip("/")
+        local_endpoint = endpoint if is_local_endpoint(endpoint) else ""
+        if not servers and not local_endpoint:
+            return True
+
+        msg = QMessageBox()
+        msg.setWindowTitle("Stop Ollama Before Quitting?")
+        msg.setText("Would you like to stop the Ollama server before quitting?")
+        msg.setInformativeText(
+            "Yes: Stop Ollama server (affects other connected apps)."
+            "No: Leave server running."
+            "Cancel: Return to Ollama Vox."
+        )
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.Cancel
+        )
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        answer = msg.exec()
+        if answer == QMessageBox.StandardButton.No:
+            return True
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+
+        progress = QProgressDialog("Stopping Ollama...", "", 0, 0, None)
+        progress.setWindowTitle("Stopping Ollama")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+        thread = OllamaStopThread(servers, endpoint=local_endpoint)
+        loop = QEventLoop()
+        result = [False, ""]
+
+        def on_finished(success: bool, error: str) -> None:
+            result[:] = [success, error]
+            loop.quit()
+
+        thread.finished_stop.connect(on_finished)
+        thread.start()
+        loop.exec()
+        thread.wait()
+        progress.close()
+        if not result[0]:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Could Not Stop Ollama")
+            msg.setText("Ollama Vox will stay open because the server could not stop.")
+            msg.setInformativeText(result[1])
+            msg.exec()
+        return result[0]
+
     def quit(self) -> None:
         """Cleanly shut down the application.
 
-        Stops both timers, stops any active recording, shuts down the
+        Offers to stop local Ollama servers, then stops both timers,
+        stops any active recording, shuts down the
         pipeline worker threads, hides the tray icon, and exits the Qt
         event loop.
         """
-        self._auto_stop_t.stop()
-        self._pump.stop()
+        if self._quitting or self._shutdown_complete:
+            return
+        self._quitting = True
+        try:
+            if not self._confirm_server_shutdown():
+                return
+            self._auto_stop_t.stop()
+            self._pump.stop()
 
-        if self.recording:
-            self.recorder.stop()
-            self.recording = False
+            if self.recording:
+                self.recorder.stop()
+                self.recording = False
 
-        self.pipeline.stop()
-        self.hide()
-        self.qt_app.quit()
+            self.pipeline.stop()
+            self.hide()
+            self._shutdown_complete = True
+            self.qt_app.quit()
+        finally:
+            self._quitting = False
 
     def run(self) -> None:
         """Show the tray icon and enter the Qt event loop (blocks until quit).

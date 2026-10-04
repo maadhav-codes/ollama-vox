@@ -54,6 +54,14 @@ Start the menubar application:
 uv run ollama-vox
 ```
 
+If the local Ollama server is stopped, the app asks permission to start
+`ollama serve` in the background and waits up to 15 seconds for it to be ready.
+Ollama must be installed and its command available on `PATH`. When quitting,
+you can stop the local server (even if it was already running before this
+session), leave it running, or cancel quit. Stopping it also disconnects other
+apps using that server.
+Remote servers must be started on their host.
+
 ## Usage
 
 1. Click the microphone icon in your macOS menubar.

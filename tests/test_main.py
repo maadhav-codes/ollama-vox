@@ -10,6 +10,9 @@ from ollama_vox.core.config import AppConfig
 
 @pytest.fixture
 def startup(mocker):
+    # Skip the optional espeak compatibility patch; it is unrelated to startup
+    # ordering and importing it after Qt can trigger third-party import hooks.
+    mocker.patch.dict(sys.modules, {"dateutil.parser": None})
     # Import after the hardware dependency fixtures have been applied.
     from ollama_vox import main
 
