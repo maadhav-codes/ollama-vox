@@ -6,6 +6,7 @@ and with per-test mocker patches where specific return values are needed.
 """
 
 import numpy as np
+import pytest
 
 from ollama_vox.core.stt import STT
 
@@ -28,15 +29,10 @@ def test_transcribe_empty_audio_returns_empty_and_prints_final(mocker):
     final.assert_called_once_with("")
 
 
-def test_transcribe_chunked_live_and_final(mocker):
-    """transcribe() calls printer.live() once per 3-second chunk and final() once.
-
-    A 7-second audio clip at 16000 Hz produces three 3-second chunks
-    (0–3 s, 3–6 s, 6–7 s), so ``printer.live`` should be called 3 times.
-    The final transcription of the full audio should result in exactly one
-    ``printer.final`` call.
-    """
-    mocker.patch(
+@pytest.mark.parametrize("seconds", [1, 7, 20])
+def test_transcribe_full_recording_once(mocker, seconds):
+    """Long recordings should cost one full-context pass, not multiple previews."""
+    whisper = mocker.patch(
         "ollama_vox.core.stt.mlx_whisper.transcribe", return_value={"text": "hello"}
     )
     stt = STT(model="test-model")
@@ -44,12 +40,13 @@ def test_transcribe_chunked_live_and_final(mocker):
     final = mocker.patch.object(stt.printer, "final")
 
     # 7 seconds of silent audio — content doesn't matter, only length.
-    audio = np.zeros(16000 * 7, dtype=np.float32)
+    audio = np.zeros(16000 * seconds, dtype=np.float32)
     result = stt.transcribe(audio, sr=16000)
 
     assert result == "hello"
-    # 3 chunks (0-3s, 3-6s, 6-7s) → 3 live updates.
-    assert live.call_count == 3
+    whisper.assert_called_once()
+    np.testing.assert_array_equal(whisper.call_args.args[0], audio)
+    live.assert_not_called()
     final.assert_called_once_with("hello")
 
 

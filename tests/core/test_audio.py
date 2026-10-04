@@ -142,3 +142,18 @@ def test_should_auto_stop_for_vad_silence(mocker):
 
     assert rec.should_auto_stop() is True
     assert rec._auto_stop_reason == "vad_silence"
+
+
+def test_push_to_talk_ignores_silence_but_keeps_max_duration(mocker):
+    rec = AudioRecorder(
+        vad_enabled=True, vad_silence_seconds=0.5, max_duration_seconds=20
+    )
+    rec.recording = True
+    rec._started_at = 10
+    rec._silence_run_seconds = 5
+    clock = mocker.patch("ollama_vox.core.audio.time.monotonic", return_value=11)
+
+    assert not rec.should_auto_stop(allow_silence=False)
+    clock.return_value = 31
+    assert rec.should_auto_stop(allow_silence=False)
+    assert rec._auto_stop_reason == "max_duration"

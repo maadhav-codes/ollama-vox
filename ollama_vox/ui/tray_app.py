@@ -54,6 +54,9 @@ from ollama_vox.ui.model_setup import (
     is_local_endpoint,
     running_started_servers,
 )
+from ollama_vox.core.config import InteractionConfig
+from ollama_vox.core.hotkey import PushToTalkHotkey
+from ollama_vox.ui.audio_cues import AudioCues
 
 # Maps each pipeline status to a distinctive colour used in the UI dot badge
 # and the programmatically drawn tray icon.
@@ -78,7 +81,7 @@ STATUS_SUB = {
 # inherit typography and colour defaults.
 QSS = """
 QWidget {
-    font-family: -apple-system, "Helvetica", Arial, sans-serif;
+    font-family: "Helvetica Neue", "Helvetica", Arial, sans-serif;
     font-size: 13px;
     color: #1c1c1e;
     background: #ffffff;
@@ -371,6 +374,7 @@ class VoiceTrayApp(QSystemTrayIcon):
     Args:
         pipeline (Pipeline): The active processing pipeline.
         recorder (AudioRecorder): The microphone recorder.
+        interaction (InteractionConfig): Shortcut and audible feedback settings.
 
     Signals:
         _status_signal (str): Internal signal — carries status string from
@@ -381,8 +385,11 @@ class VoiceTrayApp(QSystemTrayIcon):
 
     _status_signal = Signal(str)
     _metrics_signal = Signal(dict)
+    _ptt_signal = Signal(bool)
 
-    def __init__(self, pipeline: Any, recorder: Any) -> None:
+    def __init__(
+        self, pipeline: Any, recorder: Any, interaction: InteractionConfig | None = None
+    ) -> None:
         # Ensure there is exactly one QApplication instance.
         self.qt_app = QApplication.instance() or QApplication(sys.argv)
         # Keep the app running even when all windows are closed (tray app).
@@ -392,6 +399,19 @@ class VoiceTrayApp(QSystemTrayIcon):
         self.pipeline = pipeline
         self.recorder = recorder
         self.recording = False  # True while the microphone is actively recording
+        self.interaction = interaction or InteractionConfig()
+        self._ptt_held = False
+        self._recording_source = None
+        self._start_pending = None
+        self._thinking_cued = False
+        self._cues = AudioCues(
+            self.interaction.audio_cues_enabled,
+            self.interaction.audio_cues_volume,
+            self,
+        )
+        self._hotkey = PushToTalkHotkey(
+            self.interaction.push_to_talk_hotkey, self._ptt_signal.emit
+        )
         self._quitting = False
         self._shutdown_complete = False
         # Route native/application Quit requests through the same confirmation.
@@ -406,6 +426,7 @@ class VoiceTrayApp(QSystemTrayIcon):
         # Connect internal signals to their main-thread slots.
         self._status_signal.connect(self._apply_status)
         self._metrics_signal.connect(self._apply_metrics)
+        self._ptt_signal.connect(self._push_to_talk_changed)
 
         # --- Context menu ---
         self.menu = QMenu()
@@ -415,6 +436,14 @@ class VoiceTrayApp(QSystemTrayIcon):
         self._show_a = QAction("Show Panel", self.menu)
         self._change_model_a = QAction("Change Model...", self.menu)
         self._quit_a = QAction("Quit", self.menu)
+        shortcut = (
+            self.interaction.push_to_talk_hotkey.replace("<", "")
+            .replace(">", "")
+            .replace("alt", "option")
+        )
+        self._hotkey_a = QAction(f"Push-to-Talk ({shortcut})", self.menu)
+        self._hotkey_a.setCheckable(True)
+        self._hotkey_a.toggled.connect(self._toggle_hotkey)
 
         self._start_a.triggered.connect(self.start)
         self._stop_a.triggered.connect(self.stop)
@@ -432,6 +461,7 @@ class VoiceTrayApp(QSystemTrayIcon):
         ):
             self.menu.addAction(a)
         self.menu.addSeparator()
+        self.menu.addAction(self._hotkey_a)
         self.menu.addAction(self._quit_a)
         self.setContextMenu(self.menu)
 
@@ -540,8 +570,8 @@ class VoiceTrayApp(QSystemTrayIcon):
 
     def _refresh_menu(self) -> None:
         """Enable/disable Start and Stop menu actions based on recording state."""
-        self._start_a.setEnabled(not self.recording)
-        self._stop_a.setEnabled(self.recording)
+        self._start_a.setEnabled(not self.recording and self._start_pending is None)
+        self._stop_a.setEnabled(self.recording or self._start_pending is not None)
 
     def set_status(self, status: str) -> None:
         """Thread-safe entry point for status updates from worker threads.
@@ -561,6 +591,14 @@ class VoiceTrayApp(QSystemTrayIcon):
         Args:
             status (str): New pipeline status string.
         """
+        if (self.recording or self._start_pending is not None) and status not in {
+            "listening",
+            "error",
+        }:
+            return
+        if status == "busy" and not self._thinking_cued:
+            self._thinking_cued = True
+            self._cues.play("thinking")
         self.status = status
         self._set_icon(status)
         self._render_tooltip()
@@ -592,7 +630,9 @@ class VoiceTrayApp(QSystemTrayIcon):
         If the recorder signals it should auto-stop (VAD silence or max
         duration reached), delegate to :meth:`stop`.
         """
-        if self.recording and self.recorder.should_auto_stop():
+        if self.recording and self.recorder.should_auto_stop(
+            allow_silence=not (self._ptt_held and self._recording_source == "ptt")
+        ):
             self.stop()
 
     def start(self) -> None:
@@ -604,12 +644,68 @@ class VoiceTrayApp(QSystemTrayIcon):
 
         No-op if already recording.
         """
-        if not self.recording:
-            # Cancel any in-progress LLM/TTS output before recording.
-            self.pipeline.interrupt_speaking()
+        self._begin_recording("menu")
+
+    def _begin_recording(self, source: str) -> None:
+        if (
+            self._quitting
+            or self._shutdown_complete
+            or self.recording
+            or self._start_pending is not None
+        ):
+            return
+        marker = object()
+        self._start_pending = marker
+        self._recording_source = source
+        self._thinking_cued = False
+        self.pipeline.interrupt_speaking()
+        self._cues.stop()
+        self._refresh_menu()
+
+        def open_microphone():
+            if self._start_pending is not marker or self._shutdown_complete:
+                return
+            self._start_pending = None
+            if self._quitting:
+                self._recording_source = None
+                self._refresh_menu()
+                return
+            try:
+                self.recorder.start()
+            except Exception as exc:
+                self._recording_source = None
+                self.pipeline._record_error(exc)
+                return
             self.recording = True
             self.set_status("listening")
-            self.recorder.start()
+
+        # Finish the short cue before opening the mic, so it isn't transcribed.
+        self._cues.play("start", on_finished=open_microphone)
+
+    @Slot(bool)
+    def _push_to_talk_changed(self, held: bool) -> None:
+        if self._shutdown_complete:
+            return
+        self._ptt_held = held
+        if held:
+            if not self._quitting:
+                self._begin_recording("ptt")
+        elif self._recording_source == "ptt":
+            self.stop()
+
+    @Slot(bool)
+    def _toggle_hotkey(self, enabled: bool) -> None:
+        if enabled:
+            try:
+                self._hotkey.start()
+            except Exception as exc:
+                self._hotkey_a.blockSignals(True)
+                self._hotkey_a.setChecked(False)
+                self._hotkey_a.blockSignals(False)
+                QMessageBox.warning(None, "Push-to-Talk Unavailable", str(exc))
+        else:
+            self._hotkey.stop()
+            self._push_to_talk_changed(False)
 
     def stop(self) -> None:
         """Stop recording and enqueue the captured audio for transcription.
@@ -619,15 +715,20 @@ class VoiceTrayApp(QSystemTrayIcon):
 
         No-op if not currently recording.
         """
+        if self._start_pending is not None:
+            self._start_pending = None
+            self._recording_source = None
+            self._refresh_menu()
         if self.recording:
             self.recording = False
-            self.set_status("busy")
             audio = self.recorder.stop()
+            self._recording_source = None
+            self._cues.play("stop")
+            self.set_status("busy")
             if not self.pipeline.enqueue_audio(audio):
                 # Queue was full and the item was dropped — report an error.
                 self.set_status("error")
                 return
-            self.set_status("idle")
 
     def show_status(self) -> None:
         """Refresh and raise the floating status panel."""
@@ -756,6 +857,10 @@ class VoiceTrayApp(QSystemTrayIcon):
         try:
             if not self._confirm_server_shutdown():
                 return
+            self._start_pending = None
+            self._recording_source = None
+            self._hotkey.stop()
+            self._cues.stop()
             self._auto_stop_t.stop()
             self._pump.stop()
 
@@ -777,6 +882,8 @@ class VoiceTrayApp(QSystemTrayIcon):
         :meth:`quit` for a clean shutdown.
         """
         self.show()
+        if self.interaction.push_to_talk_enabled:
+            self._hotkey_a.setChecked(True)
         try:
             self.qt_app.exec()
         except KeyboardInterrupt:

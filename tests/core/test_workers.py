@@ -108,3 +108,49 @@ def test_update_metric_sets_last_and_smooth_avg():
     p._update_metric("stt_ms_last", "stt_ms_avg", 50.0)
     # EMA: 100 * 0.8 + 50 * 0.2 = 90.0
     assert p.metrics["stt_ms_avg"] == 90.0
+
+
+def test_llm_worker_keeps_raw_code_in_panel_and_enqueues_clean_speech():
+    from ollama_vox.core.llm import OllamaClient
+
+    stt, llm, tts = MagicMock(), MagicMock(), MagicMock()
+    p = Pipeline(stt, llm, tts, sample_rate=16000, queue_maxsize=20)
+    raw = "**Use this.**\n```python\ndef secret_code(): pass\n```\nSee [the docs](https://example.com)."
+
+    def stream(*args, **kwargs):
+        for char in raw:
+            yield char
+        p.running = False
+
+    llm.stream_generate.side_effect = stream
+    llm.sentence_chunks.side_effect = OllamaClient.sentence_chunks
+    p.text_q.put("question")
+
+    p.llm_worker()
+
+    spoken = []
+    while not p.response_q.empty():
+        spoken.append(p.response_q.get_nowait())
+    assert "Use this." in " ".join(spoken)
+    assert "response panel" in " ".join(spoken)
+    assert "secret_code" not in " ".join(spoken)
+    assert "https" not in " ".join(spoken)
+    assert p.metrics["last_response"] == raw
+
+
+def test_stt_keeps_thinking_status_until_text_is_forwarded():
+    stt, llm, tts = MagicMock(), MagicMock(), MagicMock()
+    status = MagicMock()
+    p = Pipeline(stt, llm, tts, sample_rate=16000, status_callback=status)
+
+    def transcribe(*args):
+        p.running = False
+        return "hello"
+
+    stt.transcribe.side_effect = transcribe
+    p.audio_q.put([1])
+
+    p.stt_worker()
+
+    assert p.text_q.get_nowait() == "hello"
+    status.assert_called_once_with("busy")

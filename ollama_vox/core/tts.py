@@ -11,8 +11,8 @@ How it fits into the pipeline::
 Key features
 -------------
 * **Lazy model loading**: The Kokoro model is not loaded until the first call
-  to :meth:`TTS.speak`, so application startup is fast even if TTS is never
-  used in a session.
+  to :meth:`TTS.prepare` or :meth:`TTS.speak`. Startup warms it silently
+  before enabling the recording UI.
 * **Text splitting**: Long texts are split at sentence boundaries first, then
   hard-chunked at ``split_chars`` characters. This keeps synthesis latency
   low — the first chunk starts playing before the rest is synthesised.
@@ -36,6 +36,7 @@ import logging
 import re
 import time
 from collections.abc import Iterable
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from threading import Lock
 
@@ -44,6 +45,7 @@ import sounddevice as sd
 import yaml
 
 from ollama_vox.core.config import AppConfig, ConfigValidationError
+from ollama_vox.core.speech_text import sanitize_for_speech
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +177,47 @@ class TTS:
 
         # Load model from the local path. Path() ensures cross-platform
         # compatibility and clean string-to-path conversion.
+        # Misaki otherwise runs spacy.cli.download() here on first generation.
+        try:
+            version("en-core-web-sm")
+        except PackageNotFoundError as exc:
+            raise RuntimeError(
+                "Kokoro's English text-processing model is missing. "
+                "Run `uv run python -m spacy download en_core_web_sm` or restart Ollama Vox to complete setup. "
+                "Speech synthesis will not download dependencies during a conversation."
+            ) from exc
         self._model = load_model(Path(self.model_id))
         return self._model
+
+    def _voice_path(self, voice: str | None) -> str:
+        """Pass downloaded voice files directly, avoiding Kokoro's HF lookup."""
+        voice = voice or "af_heart"
+        paths = []
+        for name in voice.split(","):
+            path = Path(name).expanduser()
+            if not path.is_file():
+                path = Path(self.model_id) / "voices" / f"{name}.safetensors"
+            if not path.is_file() or path.suffix != ".safetensors":
+                raise FileNotFoundError(
+                    f"Missing local Kokoro voice: {path}. Run model setup."
+                )
+            paths.append(str(path.resolve()))
+        return ",".join(paths)
+
+    def prepare(self) -> None:
+        """Warm model, pronunciation pipeline and MLX kernels without playback."""
+        started = time.perf_counter()
+        model = self._load_model()
+        voice = self._voice_path(self.voice)
+        produced_audio = False
+        for result in model.generate("Hello.", voice=voice, speed=self.default_speed):
+            # Conversion evaluates lazy MLX audio; never open an output device.
+            produced_audio |= np.asarray(result.audio).size > 0
+        if not produced_audio:
+            raise RuntimeError("Kokoro warm-up produced no audio.")
+        logger.info(
+            "event=tts_ready elapsed_ms=%.1f", (time.perf_counter() - started) * 1000
+        )
 
     def _split_text(self, text: str) -> Iterable[str]:
         """Split text into synthesisable chunks respecting sentence boundaries.
@@ -338,9 +379,11 @@ class TTS:
 
         Side effects:
             * Plays audio through the default output device.
-            * Logs errors for failed synthesis chunks (does not raise).
+            * Logs generation failures; model/voice initialization errors propagate
+              to the pipeline so the UI can display them.
         """
         text = (text or "").strip()
+        text = sanitize_for_speech(text)
         if not text:
             return
 
@@ -358,7 +401,7 @@ class TTS:
                 self.model_id,
                 exc_info=exc,
             )
-            return
+            raise
 
         # --- Resolve voice/speed/pitch ---
         # Priority: per-call argument → style override → global default.
@@ -373,6 +416,8 @@ class TTS:
             selected_speed = float(style_cfg.get("speed", selected_speed))
             if selected_pitch is None and "pitch" in style_cfg:
                 selected_pitch = float(style_cfg.get("pitch"))
+
+        selected_voice = self._voice_path(selected_voice)
 
         # --- Synthesise and play each chunk ---
         for chunk in self._split_text(text):

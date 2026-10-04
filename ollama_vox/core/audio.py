@@ -189,7 +189,7 @@ class AudioRecorder:
         )
         self.stream.start()
 
-    def should_auto_stop(self) -> bool:
+    def should_auto_stop(self, allow_silence: bool = True) -> bool:
         """Check whether the recording should stop automatically.
 
         This method is polled by the UI timer (every ~200 ms) to decide
@@ -222,7 +222,11 @@ class AudioRecorder:
             return True
 
         # Check if VAD has accumulated enough consecutive silence.
-        if self.vad_enabled and self._silence_run_seconds >= self.vad_silence_seconds:
+        if (
+            allow_silence
+            and self.vad_enabled
+            and self._silence_run_seconds >= self.vad_silence_seconds
+        ):
             self._auto_stop_reason = "vad_silence"
             return True
 

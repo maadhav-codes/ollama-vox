@@ -43,6 +43,8 @@ import time
 from queue import Empty, Queue
 from threading import Event, Thread
 
+from ollama_vox.core.speech_text import sanitize_for_speech, without_fenced_code
+
 logger = logging.getLogger(__name__)
 
 
@@ -380,7 +382,8 @@ class Pipeline:
                 if text:
                     self._safe_put(self.text_q, text, "text")
                 self._publish_metrics()
-                self._set_status("idle")
+                if not text:
+                    self._set_status("idle")
             except Exception as exc:
                 self._record_error(exc)
                 logger.exception(
@@ -427,11 +430,21 @@ class Pipeline:
                 )
 
                 # Group tokens into sentences before handing to TTS.
-                response_parts = []
-                for sentence in self.llm.sentence_chunks(token_stream):
+                raw_parts = []
+
+                def capture_tokens():
+                    for token in token_stream:
+                        raw_parts.append(token)
+                        yield token
+
+                for sentence in self.llm.sentence_chunks(
+                    without_fenced_code(capture_tokens())
+                ):
                     if self.cancel_event.is_set():
                         break
-                    response_parts.append(sentence)
+                    sentence = sanitize_for_speech(sentence)
+                    if not sentence:
+                        continue
                     # Enqueue each sentence independently so TTS can start
                     # speaking while the LLM generates the rest.
                     self._safe_put(self.response_q, sentence, "response")
@@ -442,9 +455,9 @@ class Pipeline:
                     (time.perf_counter() - start) * 1000.0,
                 )
 
-                if response_parts:
+                if raw_parts:
                     # Store the full response for display in the status panel.
-                    self.metrics["last_response"] = " ".join(response_parts).strip()
+                    self.metrics["last_response"] = "".join(raw_parts).strip()
                     self.metrics["responses_count"] += 1
 
                 self._publish_metrics()

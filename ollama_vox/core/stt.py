@@ -11,9 +11,8 @@ How it fits into the pipeline::
 Role in the architecture
 -------------------------
 :class:`STT` is the second stage of the pipeline. It receives raw float32
-audio from the :class:`~ollama_vox.core.audio.AudioRecorder`, splits it into
-3-second chunks for live progress display, then passes the full audio to
-Whisper for the final high-quality transcription.
+audio from the :class:`~ollama_vox.core.audio.AudioRecorder` and transcribes
+the full recording once, retaining context without redundant preview passes.
 
 Dependencies:
     * ``mlx_whisper`` — runs Whisper on Apple Silicon using the MLX framework.
@@ -88,8 +87,7 @@ class STT:
     """Speech-to-Text engine backed by MLX Whisper.
 
     Transcribes a NumPy float32 audio array into a text string. Implements
-    exponential-backoff retry logic for transient model errors, and provides
-    a chunked "live preview" pass so the user sees interim results quickly.
+    exponential-backoff retry logic for transient model errors.
 
     Typical usage::
 
@@ -116,8 +114,7 @@ class STT:
         """Run Whisper on a single 1-D audio array with retry logic.
 
         This private method wraps ``mlx_whisper.transcribe`` with
-        exponential-backoff retries. Called for both 3-second live chunks
-        and the final full-audio pass.
+        exponential-backoff retries for transient failures.
 
         Args:
             audio_data (numpy.ndarray): 1-D float32 audio at 16000 Hz.
@@ -153,14 +150,7 @@ class STT:
         return ""
 
     def transcribe(self, audio: np.ndarray, sr: int) -> str:
-        """Transcribe an audio array to text with a live chunked preview.
-
-        Performs two passes:
-
-        1. **Chunked live pass** — splits audio into 3-second chunks,
-           transcribes each, and prints growing interim text to the terminal.
-        2. **Final full pass** — transcribes the entire audio for the best
-           accuracy, then prints and returns the result.
+        """Transcribe a completed recording once, with full audio context.
 
         Args:
             audio (numpy.ndarray): Float32 audio data (1-D or 2-D).
@@ -184,27 +174,10 @@ class STT:
         # Flatten to 1-D — Whisper expects a flat array.
         audio_1d = np.asarray(audio).reshape(-1)
 
-        # --- Pass 1: chunked live preview ---
-        chunk_seconds = 3
-        chunk_size = int(sr * chunk_seconds)
-        num_samples = len(audio_1d)
-        live_segments = []
-
-        for start in range(0, num_samples, chunk_size):
-            end = min(start + chunk_size, num_samples)
-            chunk_audio = audio_1d[start:end]
-            if len(chunk_audio) == 0:
-                continue
-
-            partial = self._transcribe_audio(chunk_audio)
-
-            if partial:
-                live_segments.append(partial)
-                # Show all segments seen so far joined as a running transcript.
-                self.printer.live(" ".join(live_segments).strip())
-
-        # --- Pass 2: final full-audio transcription ---
-        # Full context gives Whisper better accuracy than individual chunks.
+        if sr != 16000:
+            raise ValueError(
+                "Whisper requires 16000 Hz audio; set audio.sample_rate to 16000"
+            )
         final_text = self._transcribe_audio(audio_1d)
 
         self.printer.final(final_text)

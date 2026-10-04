@@ -35,7 +35,7 @@ class _StreamResponse:
         """No-op: fake response is always successful."""
         return None
 
-    def iter_lines(self, decode_unicode=True):
+    def iter_lines(self, chunk_size=1, decode_unicode=True):
         """Return lines as an iterator (mimics requests' streaming iterator)."""
         return iter(self._lines)
 
@@ -66,6 +66,9 @@ def test_generate_success_updates_history(mocker):
     assert [x["role"] for x in client.history] == ["user", "assistant"]
     # Only one HTTP request should have been made (no retries needed).
     assert mock_post.call_count == 1
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["messages"][0] == {"role": "system", "content": client.system_prompt}
+    assert payload["options"]["temperature"] == 0.5
 
 
 def test_generate_non_json_content_type_falls_back(mocker):
@@ -97,7 +100,7 @@ def test_stream_generate_success_and_sentence_chunks(mocker):
         '{"message": {"content": "world."}}',
         '{"message": {"content": " Next"}}',
     ]
-    mocker.patch(
+    post = mocker.patch(
         "ollama_vox.core.llm.requests.post", return_value=_StreamResponse(lines)
     )
 
@@ -110,6 +113,7 @@ def test_stream_generate_success_and_sentence_chunks(mocker):
     # sentence_chunks should split "Hello world." at the period.
     chunks = list(OllamaClient.sentence_chunks(tokens))
     assert chunks == ["Hello world.", "Next"]
+    assert post.call_args.kwargs["json"]["messages"][0]["role"] == "system"
 
 
 def test_stream_generate_retry_then_fallback(mocker):
@@ -135,3 +139,40 @@ def test_sentence_chunks_tail_without_punctuation():
     """
     chunks = list(OllamaClient.sentence_chunks(["a", " b", " c"]))
     assert chunks == ["a b c"]
+
+
+def test_system_prompt_survives_history_trimming_and_reset(mocker):
+    response = MagicMock()
+    response.headers = {"Content-Type": "application/json"}
+    response.json.return_value = {"message": {"content": "Done."}}
+    post = mocker.patch("ollama_vox.core.llm.requests.post", return_value=response)
+    client = OllamaClient("http://test", "m", 0.5, system_prompt="Speak briefly.")
+    client.history = [{"role": "user", "content": str(i)} for i in range(20)]
+
+    client.generate("First")
+    client.history = []
+    client.generate("Second")
+
+    for call in post.call_args_list:
+        messages = call.kwargs["json"]["messages"]
+        assert messages[0] == {"role": "system", "content": "Speak briefly."}
+        assert sum(message["role"] == "system" for message in messages) == 1
+    assert all(message["role"] != "system" for message in client.history)
+
+
+def test_sentence_chunks_does_not_split_urls_at_token_boundaries():
+    tokens = ["See https://example.", "com/docs. ", "Then continue."]
+    assert list(OllamaClient.sentence_chunks(tokens)) == [
+        "See https://example.com/docs.",
+        "Then continue.",
+    ]
+
+
+def test_voice_requests_disable_thinking_and_read_unbuffered_lines(mocker):
+    response = _StreamResponse([])
+    lines = mocker.spy(response, "iter_lines")
+    post = mocker.patch("ollama_vox.core.llm.requests.post", return_value=response)
+    client = OllamaClient("http://localhost:11434", "qwen3", 0.7)
+    list(client.stream_generate("Hello"))
+    assert post.call_args.kwargs["json"]["think"] is False
+    lines.assert_called_once_with(chunk_size=1, decode_unicode=True)

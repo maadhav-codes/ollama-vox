@@ -37,6 +37,8 @@ from collections.abc import Iterable
 
 import requests
 
+from ollama_vox.core.config import DEFAULT_SYSTEM_PROMPT
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,6 +90,8 @@ class OllamaClient:
         retries=2,
         backoff_seconds=0.5,
         fallback_message="Sorry, my brain glitched for a moment. Please try again.",
+        system_prompt=DEFAULT_SYSTEM_PROMPT,
+        think=False,
     ):
         # Strip trailing slash so we can safely append paths like "/api/chat".
         self.endpoint = endpoint.rstrip("/")
@@ -96,6 +100,8 @@ class OllamaClient:
         self.retries = retries
         self.backoff_seconds = backoff_seconds
         self.fallback_message = fallback_message
+        self.system_prompt = system_prompt
+        self.think = think
 
         # Keep the last 5 user+assistant pairs (= 10 messages) in memory.
         self.history_size = 5
@@ -143,8 +149,9 @@ class OllamaClient:
 
         payload = {
             "model": self.model,
-            "messages": self.history,
-            "temperature": self.temperature,
+            "messages": self._request_messages(),
+            "think": self.think,
+            "options": {"temperature": self.temperature},
             "stream": False,  # Non-streaming: wait for full response
         }
         last_error = None
@@ -247,8 +254,9 @@ class OllamaClient:
 
         payload = {
             "model": self.model,
-            "messages": self.history,
-            "temperature": self.temperature,
+            "messages": self._request_messages(),
+            "think": self.think,
+            "options": {"temperature": self.temperature},
             "stream": True,  # Streaming mode: receive tokens incrementally
         }
         last_error = None
@@ -259,6 +267,7 @@ class OllamaClient:
             try:
                 # stream=True tells requests not to read the body immediately,
                 # so we can iterate over it line by line.
+                request_started = time.perf_counter()
                 with requests.post(
                     f"{self.endpoint}/api/chat",
                     json=payload,
@@ -266,7 +275,7 @@ class OllamaClient:
                     stream=True,
                 ) as response:
                     response.raise_for_status()
-                    for line in response.iter_lines(decode_unicode=True):
+                    for line in response.iter_lines(chunk_size=1, decode_unicode=True):
                         # Respect cancellation requests between tokens.
                         if cancel_event and cancel_event.is_set():
                             return
@@ -293,6 +302,12 @@ class OllamaClient:
                         message = data.get("message", {})
                         token = message.get("content")
                         if isinstance(token, str) and token:
+                            if not emitted_any:
+                                logger.info(
+                                    "event=ollama_first_content elapsed_ms=%.1f model=%s",
+                                    (time.perf_counter() - request_started) * 1000,
+                                    self.model,
+                                )
                             emitted_any = True
                             full_response += token
                             yield token
@@ -330,6 +345,15 @@ class OllamaClient:
         else:
             yield self.fallback_message
 
+    def _request_messages(self) -> list[dict]:
+        """Keep voice instructions outside the rolling conversation window."""
+        system = (
+            [{"role": "system", "content": self.system_prompt}]
+            if self.system_prompt
+            else []
+        )
+        return system + list(self.history)
+
     @staticmethod
     def sentence_chunks(token_stream: Iterable[str]) -> Iterable[str]:
         """Group a raw token stream into complete sentences.
@@ -365,7 +389,7 @@ class OllamaClient:
                 # Look for a sentence-ending punctuation followed by
                 # whitespace OR end-of-string. The regex `(?:\s|$)` matches
                 # either a whitespace character or the end of the string.
-                m = re.search(r"[.!?](?:\s|$)", buffer)
+                m = re.search(r"[.!?]\s", buffer)
                 if not m:
                     # No complete sentence yet — wait for more tokens.
                     break

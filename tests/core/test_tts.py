@@ -31,7 +31,9 @@ def _tts(mocker, **kwargs) -> TTS:
     mocker.patch(
         "ollama_vox.core.tts.TTS._load_model_id_from_config", return_value="mock_model"
     )
-    return TTS(**kwargs)
+    tts = TTS(**kwargs)
+    mocker.patch.object(tts, "_voice_path", side_effect=lambda voice: voice)
+    return tts
 
 
 def test_split_text_respects_sentence_boundaries_before_chunking(mocker):
@@ -144,3 +146,47 @@ def test_stop_sets_interrupt_and_stops_device(mocker):
 
     assert tts._interrupt is True
     sd_stop.assert_called_once()
+
+
+def test_prepare_warms_generator_without_playback(mocker):
+    tts = _tts(mocker, voice="af_bella")
+    model = MagicMock()
+    model.generate.return_value = iter([MagicMock(audio=np.ones(8))])
+    tts._model = model
+    play = mocker.patch("ollama_vox.core.tts.sd.play")
+    tts.prepare()
+    model.generate.assert_called_once_with("Hello.", voice="af_bella", speed=1.0)
+    play.assert_not_called()
+
+
+def test_local_voice_path_avoids_remote_lookup(tmp_path):
+    voice = tmp_path / "voices" / "af_bella.safetensors"
+    voice.parent.mkdir()
+    voice.touch()
+    tts = TTS(model_id=str(tmp_path))
+    assert tts._voice_path("af_bella") == str(voice)
+
+
+def test_missing_text_processor_fails_before_loading_kokoro(mocker):
+    import sys
+    from importlib.metadata import PackageNotFoundError
+    import pytest
+
+    loader = MagicMock()
+    mocker.patch.dict(
+        sys.modules, {"mlx_audio.tts.utils": MagicMock(load_model=loader)}
+    )
+    mocker.patch("ollama_vox.core.tts.version", side_effect=PackageNotFoundError)
+    tts = _tts(mocker)
+    with pytest.raises(RuntimeError, match="spacy download en_core_web_sm"):
+        tts._load_model()
+    loader.assert_not_called()
+
+
+def test_model_load_failure_propagates_to_pipeline(mocker):
+    import pytest
+
+    tts = _tts(mocker)
+    mocker.patch.object(tts, "_load_model", side_effect=RuntimeError("bad model"))
+    with pytest.raises(RuntimeError, match="bad model"):
+        tts.speak("Hello.")

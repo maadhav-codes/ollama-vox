@@ -118,3 +118,32 @@ def test_app_config_styles_must_be_dict():
         ConfigValidationError, match="Styles config must be a dictionary"
     ):
         AppConfig.from_dict({"styles": []})
+
+
+def test_interaction_settings_are_validated_and_coerced():
+    config = AppConfig.from_dict(
+        {
+            "interaction": {
+                "push_to_talk_enabled": "false",
+                "audio_cues_volume": "0.4",
+                "push_to_talk_hotkey": "<ctrl>+<alt>+v",
+            }
+        }
+    )
+    assert not config.interaction.push_to_talk_enabled
+    assert config.interaction.audio_cues_volume == 0.4
+    assert config.interaction.push_to_talk_hotkey == "<ctrl>+<alt>+v"
+    for invalid in (-0.1, 1.1, None):
+        with pytest.raises(ConfigValidationError, match="audio_cues_volume"):
+            AppConfig.from_dict({"interaction": {"audio_cues_volume": invalid}})
+
+
+@pytest.mark.parametrize("value", [False, True, None, "low"])
+def test_ollama_thinking_setting(value):
+    assert AppConfig.from_dict({"ollama": {"think": value}}).ollama.think == value
+
+
+@pytest.mark.parametrize("value", [1, {}, ""])
+def test_invalid_ollama_thinking_setting(value):
+    with pytest.raises(ConfigValidationError, match="ollama.think"):
+        AppConfig.from_dict({"ollama": {"think": value}})

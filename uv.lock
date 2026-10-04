@@ -1451,6 +1451,7 @@ dependencies = [
     { name = "requests" },
     { name = "sounddevice" },
     { name = "soundfile" },
+    { name = "spacy" },
     { name = "twine" },
 ]
 
@@ -1477,6 +1478,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.33.1" },
     { name = "sounddevice", specifier = ">=0.5.5" },
     { name = "soundfile", specifier = ">=0.13.1" },
+    { name = "spacy", specifier = ">=3.8.0" },
     { name = "twine", specifier = ">=6.2.0" },
 ]
 

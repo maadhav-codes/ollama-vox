@@ -30,6 +30,14 @@ from platformdirs import user_config_path, user_documents_path
 
 DEFAULT_STT_MODEL = "./whisper/whisper-small.en-mlx-q4"
 DEFAULT_TTS_MODEL = "./kokoro/Kokoro-82M-4bit"
+DEFAULT_SYSTEM_PROMPT = (
+    "You are Ollama Vox, a voice assistant helping a developer. "
+    "Answer concisely in natural spoken language, usually in one to three sentences. "
+    "Avoid Markdown formatting, bullet lists, URLs, and code blocks unless the user "
+    "explicitly asks for code. Explain commands and code in plain language. "
+    "If code is requested, give a brief spoken explanation and put the code in a "
+    "fenced block for the response panel; do not narrate punctuation or source code."
+)
 
 
 def model_location_file() -> Path:
@@ -333,6 +341,8 @@ class OllamaConfig:
     endpoint: str = "http://localhost:11434"
     model: str = "llama3.2:1b-instruct-q4_K_M"
     temperature: float = 0.7
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    think: bool | str | None = False
 
     def __post_init__(self):
         """Validate and coerce all fields to their correct Python types.
@@ -340,9 +350,50 @@ class OllamaConfig:
         Raises:
             ConfigValidationError: If any field value is of an incompatible type.
         """
+        if self.think is not None and not isinstance(self.think, (bool, str)):
+            raise ConfigValidationError(
+                "ollama.think must be a boolean, level string, or null"
+            )
+        if isinstance(self.think, str) and not self.think.strip():
+            raise ConfigValidationError("ollama.think level cannot be empty")
         self.endpoint = _coerce_type("ollama.endpoint", self.endpoint, str)
         self.model = _coerce_type("ollama.model", self.model, str)
         self.temperature = _coerce_type("ollama.temperature", self.temperature, float)
+        self.system_prompt = _coerce_type(
+            "ollama.system_prompt", self.system_prompt, str
+        )
+
+
+@dataclass
+class InteractionConfig:
+    """Keyboard and audible feedback settings for hands-free interaction."""
+
+    push_to_talk_enabled: bool = True
+    push_to_talk_hotkey: str = "<ctrl>+<alt>+<space>"
+    audio_cues_enabled: bool = True
+    audio_cues_volume: float = 0.25
+
+    def __post_init__(self):
+        self.push_to_talk_enabled = _coerce_type(
+            "interaction.push_to_talk_enabled", self.push_to_talk_enabled, bool
+        )
+        self.push_to_talk_hotkey = _coerce_type(
+            "interaction.push_to_talk_hotkey", self.push_to_talk_hotkey, str
+        )
+        self.audio_cues_enabled = _coerce_type(
+            "interaction.audio_cues_enabled", self.audio_cues_enabled, bool
+        )
+        self.audio_cues_volume = _coerce_type(
+            "interaction.audio_cues_volume", self.audio_cues_volume, float
+        )
+        if not self.push_to_talk_hotkey or not self.push_to_talk_hotkey.strip():
+            raise ConfigValidationError(
+                "interaction.push_to_talk_hotkey must not be empty"
+            )
+        if self.audio_cues_volume is None or not 0 <= self.audio_cues_volume <= 1:
+            raise ConfigValidationError(
+                "interaction.audio_cues_volume must be between 0 and 1"
+            )
 
 
 @dataclass
@@ -531,6 +582,7 @@ class AppConfig:
         stt (STTConfig): Speech-to-Text (Whisper) settings.
         ollama (OllamaConfig): Ollama LLM server settings.
         tts (TTSConfig): Text-to-Speech (Kokoro) settings.
+        interaction (InteractionConfig): Global shortcut and earcon settings.
         queue (QueueConfig): Pipeline queue settings.
         response_style (str): The name of the active speaking style from the
             ``styles`` dictionary. Must match a key in ``styles`` (or be
@@ -551,6 +603,7 @@ class AppConfig:
     stt: STTConfig = field(default_factory=STTConfig)
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
+    interaction: InteractionConfig = field(default_factory=InteractionConfig)
 
     queue: QueueConfig = field(default_factory=QueueConfig)
     response_style: str = "neutral"
@@ -568,7 +621,7 @@ class AppConfig:
         Args:
             data (dict): A dictionary with optional keys ``"audio"``,
                 ``"stt"``, ``"ollama"``, ``"tts"``, ``"queue"``,
-                ``"response_style"``, and ``"styles"``. Each key's value
+                ``"interaction"``, ``"response_style"``, and ``"styles"``. Each key's value
                 should itself be a dict of field-name → value pairs.
                 Unknown keys inside a section raise a
                 :class:`ConfigValidationError`.
@@ -601,6 +654,7 @@ class AppConfig:
             stt_cfg = STTConfig(**data.get("stt", {}))
             ollama_cfg = OllamaConfig(**data.get("ollama", {}))
             tts_cfg = TTSConfig(**data.get("tts", {}))
+            interaction_cfg = InteractionConfig(**data.get("interaction", {}))
 
             queue_cfg = QueueConfig(**data.get("queue", {}))
         except TypeError as e:
@@ -626,6 +680,7 @@ class AppConfig:
             stt=stt_cfg,
             ollama=ollama_cfg,
             tts=tts_cfg,
+            interaction=interaction_cfg,
             queue=queue_cfg,
             # Default to "neutral" if not specified; always convert to str.
             response_style=str(data.get("response_style", "neutral")),

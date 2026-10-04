@@ -13,6 +13,7 @@ classifiers = [
 dependencies = [
     "huggingface-hub>=1.12.2",
     "misaki[en]>=0.9.4",
+    "spacy>=3.8.0",
     "mlx-audio>=0.4.3",
     "mlx-whisper>=0.4.3",
     "numpy>=2.2.6",
@@ -45,7 +46,7 @@ build-backend = "setuptools.build_meta"
 include = ["ollama_vox*"]
 
 [tool.setuptools.package-data]
-"ollama_vox" = ["config.yaml"]
+"ollama_vox" = ["config.yaml", "assets/cues/*.wav"]
 
 [tool.black]
 target-version = ['py312']

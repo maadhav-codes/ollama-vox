@@ -20,6 +20,8 @@ def tray(mocker):
         pipeline=Mock(),
         hide=Mock(),
         qt_app=Mock(),
+        _hotkey=Mock(),
+        _cues=Mock(),
     )
     app.quit = MethodType(tray_app.VoiceTrayApp.quit, app)
     app.pipeline.llm.endpoint = "http://localhost:11434"

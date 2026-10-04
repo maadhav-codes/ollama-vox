@@ -59,6 +59,7 @@ from ollama_vox.core.stt import STT
 from ollama_vox.core.tts import TTS
 from ollama_vox.core.workers import Pipeline
 from ollama_vox.ui.model_setup import OllamaModelWizard
+from ollama_vox.ui.preparation import ensure_speech_dependencies, prepare_speech
 from ollama_vox.ui.tray_app import VoiceTrayApp as VoiceApp
 
 
@@ -238,6 +239,9 @@ def main() -> None:
     if not app_wizard.run(force_setup=args.setup):
         sys.exit(1)
 
+    if not ensure_speech_dependencies():
+        sys.exit(1)
+
     if args.setup:
         # Complete setup and exit without starting the pipeline or UI.
         wizard = OllamaModelWizard(config)
@@ -269,6 +273,8 @@ def main() -> None:
         endpoint=config.ollama.endpoint,
         model=config.ollama.model,
         temperature=config.ollama.temperature,
+        system_prompt=config.ollama.system_prompt,
+        think=config.ollama.think,
     )
 
     # Build the style_map for TTS from the config's styles dict.
@@ -295,6 +301,9 @@ def main() -> None:
         },
     )
 
+    if not prepare_speech(tts):
+        sys.exit(1)
+
     queue_cfg = config.queue
     pipeline = Pipeline(
         stt,
@@ -310,7 +319,7 @@ def main() -> None:
     pipeline.start()
 
     # --- Step 10: launch UI ---
-    app = VoiceApp(pipeline, recorder)
+    app = VoiceApp(pipeline, recorder, interaction=config.interaction)
     # Wire pipeline callbacks to the tray app's thread-safe signal slots.
     pipeline.set_status_callback(app.set_status)
     pipeline.set_metrics_callback(app.set_metrics)

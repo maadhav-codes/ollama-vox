@@ -24,6 +24,8 @@ def startup(mocker):
     setup.return_value.run.return_value = True
     ollama = mocker.patch.object(main, "OllamaModelWizard")
     ollama.return_value.run.return_value = True
+    mocker.patch.object(main, "ensure_speech_dependencies", return_value=True)
+    mocker.patch.object(main, "prepare_speech", return_value=True)
     health = mocker.patch.object(main, "run_startup_health_checks")
     recorder = mocker.patch.object(main, "AudioRecorder")
     mocker.patch.object(main, "STT")
@@ -125,3 +127,27 @@ def test_existing_models_skip_downloads_and_dialogs(tmp_path, mocker):
 
     dialog.assert_not_called()
     download.assert_not_called()
+
+
+def test_speech_preparation_failure_blocks_workers_and_recording(
+    startup, monkeypatch, mocker
+):
+    main, _, events = startup
+    monkeypatch.setattr(sys, "argv", ["ollama-vox"])
+    mocker.patch.object(main, "prepare_speech", return_value=False)
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+    assert exc.value.code == 1
+    events.pipeline.assert_not_called()
+    events.app.assert_not_called()
+
+
+def test_dependency_setup_failure_blocks_launch(startup, monkeypatch, mocker):
+    main, _, events = startup
+    monkeypatch.setattr(sys, "argv", ["ollama-vox"])
+    mocker.patch.object(main, "ensure_speech_dependencies", return_value=False)
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+    assert exc.value.code == 1
+    events.ollama.assert_not_called()
+    events.pipeline.assert_not_called()
