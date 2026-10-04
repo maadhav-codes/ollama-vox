@@ -3,11 +3,11 @@
 This module is the first thing that runs when the user executes
 ``ollama-vox`` (or ``python -m ollama_vox.main``). It is responsible for:
 
-1. **Parsing CLI arguments** — currently just ``--setup`` for first-run model download.
+1. **Parsing CLI arguments** — ``--setup`` for setup without launching the app.
 2. **Setting up logging** — structured log lines with timestamps and levels.
 3. **Loading configuration** — reads ``config.yaml`` via
    :class:`~ollama_vox.core.config.AppConfig`.
-4. **Running startup health checks** — verifies that model files exist and Ollama is reachable before starting the GUI.
+4. **Ensuring models are available** — runs first-run setup automatically, then checks model files and Ollama reachability before starting the GUI.
 5. **Constructing the pipeline** — wires together
    :class:`~ollama_vox.core.audio.AudioRecorder`,
    :class:`~ollama_vox.core.stt.STT`,
@@ -195,7 +195,8 @@ def main() -> None:
     2. Configure logging.
     3. Load and validate ``config.yaml``.
     4. Create the Qt application instance.
-    5. If ``--setup`` was passed, run the model download wizards and exit.
+    5. Ensure STT and TTS models are available, downloading missing models
+       through the setup wizard. In ``--setup`` mode, run both wizards and exit.
     6. Otherwise, run the Ollama model selection wizard (required).
     7. Run startup health checks (informational — does not block launch).
     8. Construct all pipeline components with settings from config.
@@ -230,13 +231,15 @@ def main() -> None:
     # which avoids the "only one QApplication" restriction during testing.
     _qt_app = QApplication.instance() or QApplication(sys.argv)
 
-    # --- Step 5: --setup mode ---
+    # --- Step 5: ensure required STT and TTS models are available ---
     from ollama_vox.ui.setup_wizard import AppSetupWizard
 
+    app_wizard = AppSetupWizard(config)
+    if not app_wizard.run(force_setup=args.setup):
+        sys.exit(1)
+
     if args.setup:
-        # Run model download wizards and exit immediately.
-        app_wizard = AppSetupWizard(config)
-        app_wizard.run(force_setup=True)
+        # Complete setup and exit without starting the pipeline or UI.
         wizard = OllamaModelWizard(config)
         wizard.run(force_setup=True)
         return

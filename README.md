@@ -37,7 +37,10 @@ uv sync --group dev
 
 ## First-Time Setup
 
-Download recommended STT + TTS models:
+On first launch, Ollama Vox prompts to download missing STT + TTS models
+before starting the menubar app. Setup must complete successfully to proceed.
+
+To run setup separately and exit afterward:
 
 ```bash
 uv run ollama-vox --setup
