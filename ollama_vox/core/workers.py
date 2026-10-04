@@ -393,15 +393,19 @@ class Pipeline:
                 )
 
     def llm_worker(self) -> None:
-        """Worker thread: dequeue text and generate a streaming LLM response.
+        """Worker thread: dequeue text, stream LLM tokens, and prepare natural speech.
 
         Runs forever in a loop (while ``self.running``):
         1. Block on ``text_q`` with a 0.5-second timeout.
         2. Skip if ``cancel_event`` is set (stale request).
-        3. Call ``llm.stream_generate()`` and group tokens into sentences via
+        3. Call ``llm.stream_generate()``, filter code fences via
+           ``without_fenced_code``, and group tokens into sentences via
            ``llm.sentence_chunks()``.
-        4. Enqueue each complete sentence in ``response_q`` for the TTS worker.
-        5. Update LLM latency metrics.
+        4. Sanitize each sentence with ``sanitize_for_speech`` and enqueue
+           in ``response_q`` for the TTS worker.
+        5. Save the complete original response in ``metrics["last_response"]``
+           so the status panel displays rich Markdown and code examples.
+        6. Update LLM latency metrics.
 
         Thread: Runs in its own daemon thread started by :meth:`start`.
         """

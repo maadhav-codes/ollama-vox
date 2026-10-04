@@ -17,8 +17,10 @@ the blocking ``run()`` method.
 
 Where it fits in startup::
 
-    main() → AppSetupWizard.run()   (STT + TTS models)
-           → OllamaModelWizard.run()  (Ollama LLM model)
+    main() → AppSetupWizard.run()         (STT + TTS models)
+           → ensure_speech_dependencies() (spaCy English model)
+           → OllamaModelWizard.run()      (Ollama LLM model + server)
+           → prepare_speech()             (TTS silent pre-warm)
            → Pipeline + UI
 
 Dependencies:

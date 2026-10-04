@@ -12,7 +12,7 @@ The UI (system-tray app) calls :meth:`AudioRecorder.start` when the user begins 
 
 Voice Activity Detection (VAD)
 -------------------------------
-When ``vad_enabled=True``, the recorder continuously measures the RMS energy of each incoming audio chunk. If the energy falls below ``vad_threshold`` for at least ``vad_silence_seconds`` consecutive seconds, the tray app's polling timer detects this via :meth:`AudioRecorder.should_auto_stop` and calls ``stop()`` automatically — so the user doesn't need to click a button.
+When ``vad_enabled=True``, the recorder continuously measures the RMS energy of each incoming audio chunk. If the energy falls below ``vad_threshold`` for at least ``vad_silence_seconds`` consecutive seconds, the tray app's polling timer detects this via :meth:`AudioRecorder.should_auto_stop` and calls ``stop()`` automatically — so the user doesn't need to click a button. When holding Push-to-Talk, silence auto-stop is suppressed to allow natural pauses while thinking.
 
 Dependencies:
     * ``sounddevice`` — wraps PortAudio for cross-platform audio I/O.
@@ -198,8 +198,14 @@ class AudioRecorder:
 
         1. **Max duration exceeded**: the recording has been running for
            longer than ``self.max_duration_seconds``.
-        2. **VAD silence**: ``vad_enabled`` is ``True`` and the mic has been
-           silent for at least ``self.vad_silence_seconds`` seconds in a row.
+        2. **VAD silence**: ``vad_enabled`` is ``True``, ``allow_silence`` is
+           ``True``, and the mic has been silent for at least
+           ``self.vad_silence_seconds`` seconds in a row.
+
+        Args:
+            allow_silence (bool): Whether silence duration triggers auto-stop.
+                Set to ``False`` during Push-to-Talk hold so silence does not
+                interrupt the speaker mid-sentence. Default: True.
 
         Returns:
             bool: ``True`` if recording should stop, ``False`` otherwise.

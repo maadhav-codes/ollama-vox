@@ -3,15 +3,18 @@
 This module handles everything related to choosing which Ollama LLM the
 application will use. It is responsible for:
 
-1. Verifying that the Ollama server is reachable.
+1. Verifying that the Ollama server is reachable, or offering to launch ``ollama serve``.
 2. Listing already-downloaded models.
 3. Letting the user choose a model (or download one if none exist).
 4. Persisting the selection back to ``config.yaml``.
+5. Cleanly shutting down locally managed Ollama server instances when the app quits.
 
 Where it fits in startup::
 
-    main() → AppSetupWizard.run()   (Whisper STT + Kokoro TTS download)
-           → OllamaModelWizard.run()  ← this module
+    main() → AppSetupWizard.run()         (Whisper STT + Kokoro TTS download)
+           → ensure_speech_dependencies() (spaCy English model)
+           → OllamaModelWizard.run()      ← this module
+           → prepare_speech()             (TTS silent pre-warm)
            → Pipeline + VoiceTrayApp
 
 It is also accessible at runtime via the tray-icon's "Change Model…" menu

@@ -6,18 +6,22 @@ First off, thank you for considering contributing to Ollama Vox! It's people lik
 
 To set up your development environment, follow these steps:
 
-1. **Install Dependencies:** We use `uv` for dependency management. Sync the project dependencies by running:
+1. **Install Dependencies:** We use `uv` for dependency management. Sync the project and development dependencies (pytest, ruff) by running:
+
    ```bash
-   uv sync
+   uv sync --group dev
    ```
+
    _Note: Ollama Vox requires Python 3.12+. `uv` will automatically use the correct version based on the project configuration._
-2. **System Dependencies:** Ollama Vox is designed exclusively for **macOS**. It requires `espeak-ng` for text-to-speech capabilities (used by Kokoro TTS via `misaki` and `phonemizer`). Make sure it is installed on your system using Homebrew:
 
-   ```bash
-   brew install espeak-ng
-   ```
+2. **Speech Dependencies:** Ollama Vox runs locally on **macOS** (Apple Silicon recommended).
+   - Kokoro's English text normalizer requires the spaCy `en_core_web_sm` model:
 
-   _Troubleshooting:_ If you encounter issues, ensure that the Homebrew bin directory is added to your system's `PATH` environment variable.
+     ```bash
+     uv run python -m spacy download en_core_web_sm
+     ```
+
+   _Note:_ English voice synthesis is handled natively by `misaki` and spaCy; external binary tools like `espeak-ng` are not required.
 
 ## Architecture Overview
 
@@ -28,15 +32,20 @@ The Ollama Vox application is designed with a clear separation of concerns. UI c
 When you are ready to submit a Pull Request, please ensure you follow these rules to maintain code quality. These commands exactly mirror our CI pipeline:
 
 1. **Run Tests:** Ensure all unit tests pass before submitting. To test the core logic and UI components, run:
+
    ```bash
    uv run pytest tests/
    ```
+
    _Tip: For faster iteration, you can run tests for specific modules, e.g., `uv run pytest tests/core/`._
+
 2. **Run Linter and Formatter:** We use `ruff` to keep our code clean and correctly formatted. Run it before committing:
+
    ```bash
    uv run ruff check .
    uv run ruff format .
    ```
+
 3. **Descriptive PRs:** Provide a clear and concise description of what your PR does and any issues it resolves.
 
 ## Issues and Feedback

@@ -381,6 +381,8 @@ class VoiceTrayApp(QSystemTrayIcon):
             worker thread to ``_apply_status`` slot on the main thread.
         _metrics_signal (dict): Internal signal — carries metrics dict from
             worker thread to ``_apply_metrics`` slot on the main thread.
+        _ptt_signal (bool): Internal signal — carries push-to-talk press/release
+            events from the hotkey callback to the main thread slot.
     """
 
     _status_signal = Signal(str)

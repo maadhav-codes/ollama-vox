@@ -329,6 +329,11 @@ class OllamaConfig:
             * 1.0 → very creative / random.
             * Values around 0.7 are a good default for conversational use.
             Default: 0.7.
+        system_prompt (str): System prompt sent to Ollama instructing it to respond
+            in concise spoken English. Default: ``DEFAULT_SYSTEM_PROMPT``.
+        think (bool | str | None): Controls chain-of-thought generation for reasoning
+            models. ``False`` disables thinking for faster voice replies.
+            Default: ``False``.
 
     Example YAML section::
 
@@ -336,6 +341,7 @@ class OllamaConfig:
           endpoint: http://localhost:11434
           model: llama3.2:1b-instruct-q4_K_M
           temperature: 0.7
+          think: false
     """
 
     endpoint: str = "http://localhost:11434"

@@ -22,9 +22,7 @@ dependencies = [
     "pyside6>=6.8.0",
     "sounddevice>=0.5.5",
     "soundfile>=0.13.1",
-    "phonemizer>=3.3.0",
     "platformdirs>=4.0",
-    "twine>=6.2.0",
 ]
 
 [project.urls]
@@ -48,14 +46,10 @@ include = ["ollama_vox*"]
 [tool.setuptools.package-data]
 "ollama_vox" = ["config.yaml", "assets/cues/*.wav"]
 
-[tool.black]
-target-version = ['py312']
-
 [dependency-groups]
 dev = [
-    "black>=26.3.1",
-    "rich>=15.0.0",
     "ruff>=0.15.12",
     "pytest>=9.0.3",
     "pytest-mock>=3.15.1",
+    "rich>=15.0.0",
 ]

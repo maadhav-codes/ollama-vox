@@ -76,6 +76,11 @@ class OllamaClient:
             Default: 0.5.
         fallback_message (str): Human-friendly message returned/yielded when
             all attempts fail.
+        system_prompt (str): Developer-focused voice instructions prepended
+            to the conversation history. Default: ``DEFAULT_SYSTEM_PROMPT``.
+        think (bool | str | None): Controls chain-of-thought generation for
+            reasoning models. ``False`` suppresses thinking for faster speech.
+            Default: ``False``.
 
     Attributes:
         history (list[dict]): Conversation history in Ollama's message format.

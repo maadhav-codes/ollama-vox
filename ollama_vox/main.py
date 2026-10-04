@@ -15,10 +15,6 @@ This module is the first thing that runs when the user executes
    :class:`~ollama_vox.core.tts.TTS`, and
    :class:`~ollama_vox.core.workers.Pipeline`.
 6. **Launching the system-tray UI** — hands control to the Qt event loop.
-
-espeak / phonemizer compatibility patch
------------------------------------------
-The Kokoro TTS model optionally uses the ``misaki.espeak`` G2P (grapheme-to-phoneme) backend, which in turn calls ``phonemizer``. Older versions of ``phonemizer`` may not expose ``EspeakWrapper.set_data_path``. The try/except block at module level monkey-patches the method if it is missing, so the import always succeeds regardless of the installed ``phonemizer`` version.
 """
 
 import argparse
@@ -27,30 +23,6 @@ import os
 
 import requests
 import yaml
-
-# --- Optional espeak / phonemizer compatibility patch ---
-# Try to import misaki's espeak backend. If EspeakWrapper doesn't have
-# set_data_path (older phonemizer), we inject a shim that sets the
-# ESPEAK_DATA_PATH environment variable instead.
-try:
-    import dateutil.parser
-    import phonemizer
-    from phonemizer.backend.espeak.wrapper import EspeakWrapper
-
-    if not hasattr(EspeakWrapper, "set_data_path"):
-        # The method is missing — create a minimal replacement.
-        def _set_data_path(path):
-            """Fallback that stores the espeak data path as an env variable."""
-            os.environ["ESPEAK_DATA_PATH"] = str(path)
-
-        # Attach the shim to the class so callers use a consistent API.
-        EspeakWrapper.set_data_path = _set_data_path
-
-    import misaki.espeak
-except ImportError:
-    # phonemizer / misaki are not installed. This is fine — TTS will use
-    # a different G2P backend (or none at all for supported voices).
-    EspeakWrapper = None
 
 from ollama_vox.core.audio import AudioRecorder
 from ollama_vox.core.config import AppConfig, ConfigValidationError

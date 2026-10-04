@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class _TerminalTranscriptPrinter:
-    """Pretty-prints live and final transcription results to the terminal.
+    """Pretty-prints transcription results to the terminal.
 
     This private helper class abstracts the difference between having the
     ``rich`` library installed vs. falling back to plain ANSI escape codes.
